@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kraken_bot"
+version = "0.1.0"
+description = "Kraken Bot"
+
+dependencies = [
+    "jupyter",
+    "krakenex",
+    "pandas"
+]
