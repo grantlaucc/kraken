@@ -10,5 +10,6 @@ description = "Kraken Bot"
 dependencies = [
     "jupyter",
     "krakenex",
-    "pandas"
+    "pandas",
+    "websocket-client"
 ]
