@@ -21,7 +21,9 @@ def create_subscription_message(symbols):
     }
 
 def on_message(ws, message):
+    message = json.loads(message)
     print(message)
+    print("\n")
     return
 
 def on_error(ws, error):
