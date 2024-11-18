@@ -8,6 +8,8 @@ import zlib
 from decimal import Decimal
 import matplotlib.pyplot as plt
 import threading
+import time
+import datetime
 
 # Define the WebSocket URL for the Kraken API
 ws_url = "wss://ws.kraken.com/v2"
@@ -74,9 +76,17 @@ class OrderBook:
         return
     
     def getQuote(self):
-        print(str(self.bids[0][0])+"/"+str(self.asks[0][0])+"\t"
-              +str(self.bids[0][1])+"x"+str(self.asks[0][1])
-              )
+        if len(self.bids)>0 and len(self.asks)>0:
+            print(str(self.bids[0][0])+"/"+str(self.asks[0][0])+"\t"
+                +str(self.bids[0][1])+"x"+str(self.asks[0][1])
+                )
+
+def queryOrderBook():
+    while True:
+        print("queryOrderBook(): "+str(datetime.datetime.now()))
+        if OrderBooks.get('BTC/USD'):
+            OrderBooks['BTC/USD'].getQuote()
+        time.sleep(1)
 
 
 def create_subscription_message(symbols):
@@ -110,11 +120,11 @@ def on_message(ws, message):
         assert orderBook.checksum == messageData['checksum'], "Snapshot checksum error"
 
     elif message.get('type')=='update': #order book update
-        print("Update Message")
+        #print("Update Message")
         messageData = message['data'][0]
         orderBook = OrderBooks[messageData['symbol']]
         orderBook.updateOrderBook(messageData['bids'], messageData['asks'], messageData['checksum'], messageData['timestamp'])
-        orderBook.getQuote()
+        #orderBook.getQuote()
     return
 
 
@@ -143,6 +153,9 @@ if __name__ == "__main__":
                                 on_message=on_message,
                                 on_error=on_error,
                                 on_close=on_close)
+    
+    queryThread = threading.Thread(target=queryOrderBook, daemon=True)
+    queryThread.start()
 
     ws.run_forever() 
 
