@@ -13,7 +13,8 @@ import datetime
 
 # Define the WebSocket URL for the Kraken API
 ws_url = "wss://ws.kraken.com/v2"
-symbols = ["BTC/USD"]  
+symbols = ["BTC/USD", "ETH/USD"]  
+
 
 #columns = ["timestamp", "symbol", "bid", "bid_qty", "ask", "ask_qty", "last", "volume", "vwap", "low", "high", "change", "change_pct"]
 #ticker_data = pd.DataFrame(columns=columns)
@@ -81,12 +82,12 @@ class OrderBook:
                 +str(self.bids[0][1])+"x"+str(self.asks[0][1])
                 )
 
-def queryOrderBook():
+def queryOrderBook(symbol=symbols[0], frequency:float = 1):
     while True:
         print("queryOrderBook(): "+str(datetime.datetime.now()))
-        if OrderBooks.get('BTC/USD'):
-            OrderBooks['BTC/USD'].getQuote()
-        time.sleep(1)
+        if OrderBooks.get(symbol):
+            OrderBooks[symbol].getQuote()
+        time.sleep(frequency)
 
 
 def create_subscription_message(symbols):
