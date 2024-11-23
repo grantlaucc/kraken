@@ -27,14 +27,14 @@ def generate_checksum(bids, asks):
     # Step 1: Generate the formatted string for asks (sorted in ascending order)
     asks_str = ''
     for ask in asks:  # Top 10 asks, sorted from low to high price
-        price_str = str(ask[0]).replace('.', '')
+        price_str = str(ask[0]).replace('.', '').lstrip('0')
         qty_str = str(ask[1]).replace('.', '').lstrip('0')
         asks_str += price_str + qty_str
 
     # Step 2: Generate the formatted string for bids (sorted in descending order)
     bids_str = ''
     for bid in bids:  # Top 10 bids, sorted from high to low price
-        price_str = str(bid[0]).replace('.', '')
+        price_str = str(bid[0]).replace('.', '').lstrip('0')
         qty_str = str(bid[1]).replace('.', '').lstrip('0')
         bids_str += price_str + qty_str
 
