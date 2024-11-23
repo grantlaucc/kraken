@@ -8,6 +8,11 @@ import zlib
 from decimal import Decimal
 import matplotlib.pyplot as plt
 import threading
+import time
+from datetime import datetime
+import datetime as dt
+import sqlite3
+from data.queries import SQLConfig
 
 # Define the WebSocket URL for the Kraken API
 ws_url = "wss://ws.kraken.com/v2"
@@ -22,14 +27,14 @@ def generate_checksum(bids, asks):
     # Step 1: Generate the formatted string for asks (sorted in ascending order)
     asks_str = ''
     for ask in asks:  # Top 10 asks, sorted from low to high price
-        price_str = str(ask[0]).replace('.', '')
+        price_str = str(ask[0]).replace('.', '').lstrip('0')
         qty_str = str(ask[1]).replace('.', '').lstrip('0')
         asks_str += price_str + qty_str
 
     # Step 2: Generate the formatted string for bids (sorted in descending order)
     bids_str = ''
     for bid in bids:  # Top 10 bids, sorted from high to low price
-        price_str = str(bid[0]).replace('.', '')
+        price_str = str(bid[0]).replace('.', '').lstrip('0')
         qty_str = str(bid[1]).replace('.', '').lstrip('0')
         bids_str += price_str + qty_str
 
@@ -47,6 +52,15 @@ class OrderBook:
         self.askMap = askMap
         self.checksum = checksum
         self.lastUpdate = lastUpdate
+        self.db_file = 'kraken_quotes.db'
+
+        # Connect to SQLite database (or create it)
+        self.conn = sqlite3.connect(self.db_file,check_same_thread=False)
+        self.cursor = self.conn.cursor()
+        print("db connected")
+        # Create the table if it doesn't exist
+        self.cursor.execute(SQLConfig.CREATE_TABLE_QUOTE)
+        self.conn.commit()
 
     def updateOrderBook(self, updateBids, updateAsks, checksum, timestamp):
         #TODO checksum and timestamp
@@ -73,10 +87,45 @@ class OrderBook:
         self.lastUpdate = timestamp
         return
     
-    def getQuote(self):
-        print(str(self.bids[0][0])+"/"+str(self.asks[0][0])+"\t"
-              +str(self.bids[0][1])+"x"+str(self.asks[0][1])
-              )
+    def getQuote(self,query_time:datetime|None):
+
+        if len(self.bids)>0 and len(self.asks)>0:
+
+            bid_prices = [str(self.bids[i][0]) for i in range(10)]
+            bid_volumes = [str(self.bids[i][1]) for i in range(10)]
+            ask_prices = [str(self.asks[i][0]) for i in range(10)]
+            ask_volumes = [str(self.asks[i][1]) for i in range(10)]
+
+            # Prepare the values for insertion
+            values = []
+            values+=[query_time.strftime('%Y-%m-%d %H:%M:%S'),self.symbol]
+            for i in range(10):
+                values.append(bid_prices[i])
+                values.append(bid_volumes[i])
+                values.append(ask_prices[i])
+                values.append(ask_volumes[i])
+
+            print(values)
+            # Execute the insert statement with the appropriate values
+            self.cursor.execute(SQLConfig.INSERT_QUOTE, values)
+
+            self.conn.commit()
+            print("-----self.bids-----")
+            print(str(self.bids),len(self.bids))
+
+            print(str(self.bids[0][0])+"/"+str(self.asks[0][0])+"\t"
+                +str(self.bids[0][1])+"x"+str(self.asks[0][1])
+                )
+            
+            
+
+def queryOrderBook():
+    while True:
+        query_time = dt.datetime.now()
+        print("queryOrderBook(): "+str(query_time))
+        if OrderBooks.get('BTC/USD'):
+            OrderBooks['BTC/USD'].getQuote(query_time)
+        time.sleep(1)
 
 
 def create_subscription_message(symbols):
@@ -110,14 +159,12 @@ def on_message(ws, message):
         assert orderBook.checksum == messageData['checksum'], "Snapshot checksum error"
 
     elif message.get('type')=='update': #order book update
-        print("Update Message")
+        #print("Update Message")
         messageData = message['data'][0]
         orderBook = OrderBooks[messageData['symbol']]
         orderBook.updateOrderBook(messageData['bids'], messageData['asks'], messageData['checksum'], messageData['timestamp'])
-        orderBook.getQuote()
+        #orderBook.getQuote()
     return
-
-
 
 def on_error(ws, error):
     print("Error:", error)
@@ -143,6 +190,9 @@ if __name__ == "__main__":
                                 on_message=on_message,
                                 on_error=on_error,
                                 on_close=on_close)
+    
+    queryThread = threading.Thread(target=queryOrderBook, daemon=True)
+    queryThread.start()
 
     ws.run_forever() 
 
