@@ -99,11 +99,9 @@ class OrderBook:
             # Prepare the values for insertion
             values = []
             values+=[query_time.strftime('%Y-%m-%d %H:%M:%S'),self.symbol]
-            for i in range(10):
-                values.append(bid_prices[i])
-                values.append(bid_volumes[i])
-                values.append(ask_prices[i])
-                values.append(ask_volumes[i])
+            values.extend([item for pair in zip(bid_prices, bid_volumes) for item in pair])
+            values.extend([item for pair in zip(ask_prices, ask_volumes) for item in pair])
+
 
             print(values)
             # Execute the insert statement with the appropriate values
