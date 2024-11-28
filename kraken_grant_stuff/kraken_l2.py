@@ -3,126 +3,24 @@ import json
 import pandas as pd
 import signal
 import sys
-import bisect
-import zlib
 from decimal import Decimal
-import matplotlib.pyplot as plt
 import threading
 import time
-from datetime import datetime
 import datetime as dt
-import sqlite3
-from data.queries import SQLConfig
+from order_book import OrderBook, generate_checksum, validate_checksum
 
 # Define the WebSocket URL for the Kraken API
 ws_url = "wss://ws.kraken.com/v2"
-symbols = ["BTC/USD"]  
-
-#columns = ["timestamp", "symbol", "bid", "bid_qty", "ask", "ask_qty", "last", "volume", "vwap", "low", "high", "change", "change_pct"]
-#ticker_data = pd.DataFrame(columns=columns)
+symbols = ["BTC/USD", "ETH/USD"]  
 
 OrderBooks = {}
-
-def generate_checksum(bids, asks):
-    # Step 1: Generate the formatted string for asks (sorted in ascending order)
-    asks_str = ''
-    for ask in asks:  # Top 10 asks, sorted from low to high price
-        price_str = str(ask[0]).replace('.', '').lstrip('0')
-        qty_str = str(ask[1]).replace('.', '').lstrip('0')
-        asks_str += price_str + qty_str
-
-    # Step 2: Generate the formatted string for bids (sorted in descending order)
-    bids_str = ''
-    for bid in bids:  # Top 10 bids, sorted from high to low price
-        price_str = str(bid[0]).replace('.', '').lstrip('0')
-        qty_str = str(bid[1]).replace('.', '').lstrip('0')
-        bids_str += price_str + qty_str
-
-    full_str = asks_str + bids_str
-    checksum = zlib.crc32(full_str.encode('utf-8'))
-    return checksum
-
-class OrderBook:
-    def __init__(self, symbol, depth, bids=[], asks=[], bidMap = {}, askMap = {}, checksum=None, lastUpdate=None):
-        self.symbol = symbol
-        self.depth = depth
-        self.bids = bids #sorted list [[price1, qty1], [price2, qty2], etc.]
-        self.asks = asks #sorted list [[price1, qty1], [price2, qty2], etc.]
-        self.bidMap = bidMap
-        self.askMap = askMap
-        self.checksum = checksum
-        self.lastUpdate = lastUpdate
-        self.db_file = 'kraken_quotes.db'
-
-        # Connect to SQLite database (or create it)
-        self.conn = sqlite3.connect(self.db_file,check_same_thread=False)
-        self.cursor = self.conn.cursor()
-        print("db connected")
-        # Create the table if it doesn't exist
-        self.cursor.execute(SQLConfig.CREATE_TABLE_QUOTE)
-        self.conn.commit()
-
-    def updateOrderBook(self, updateBids, updateAsks, checksum, timestamp):
-        #TODO checksum and timestamp
-        for updateBid in updateBids:
-            if updateBid['qty'] != 0.0: 
-                self.bidMap.update({updateBid['price']:updateBid['qty']})
-            else: #updateBid with qty = 0.0
-                if updateBid['price'] in self.bidMap:
-                    self.bidMap.pop(updateBid['price'])
-            self.bids = [[price, qty] for price, qty in sorted(self.bidMap.items(), key=lambda x: x[0], reverse=True)][:self.depth]
-            self.bidMap = dict(self.bids)
-
-        for updateAsk in updateAsks:
-            if updateAsk['qty'] != 0.0:
-                self.askMap.update({updateAsk['price']: updateAsk['qty']})
-            else:  # updateAsk with qty = 0.0
-                if updateAsk['price'] in self.askMap:
-                    self.askMap.pop(updateAsk['price'])
-            self.asks = [[price, qty] for price, qty in sorted(self.askMap.items(), key=lambda x: x[0])][:self.depth]
-            self.askMap = dict(self.asks)
-
-        self.checksum = generate_checksum(self.bids, self.asks)
-        assert self.checksum == checksum, "Update checksum error"
-        self.lastUpdate = timestamp
-        return
-    
-    def getQuote(self,query_time:datetime|None):
-
-        if len(self.bids)>0 and len(self.asks)>0:
-
-            bid_prices = [str(self.bids[i][0]) for i in range(10)]
-            bid_volumes = [str(self.bids[i][1]) for i in range(10)]
-            ask_prices = [str(self.asks[i][0]) for i in range(10)]
-            ask_volumes = [str(self.asks[i][1]) for i in range(10)]
-
-            # Prepare the values for insertion
-            values = []
-            values+=[query_time.strftime('%Y-%m-%d %H:%M:%S'),self.symbol]
-            values.extend([item for pair in zip(bid_prices, bid_volumes) for item in pair])
-            values.extend([item for pair in zip(ask_prices, ask_volumes) for item in pair])
-
-
-            print(values)
-            # Execute the insert statement with the appropriate values
-            self.cursor.execute(SQLConfig.INSERT_QUOTE, values)
-
-            self.conn.commit()
-            print("-----self.bids-----")
-            print(str(self.bids),len(self.bids))
-
-            print(str(self.bids[0][0])+"/"+str(self.asks[0][0])+"\t"
-                +str(self.bids[0][1])+"x"+str(self.asks[0][1])
-                )
-            
-            
 
 def queryOrderBook():
     while True:
         query_time = dt.datetime.now()
-        print("queryOrderBook(): "+str(query_time))
-        if OrderBooks.get('BTC/USD'):
-            OrderBooks['BTC/USD'].getQuote(query_time)
+        for symbol in OrderBooks:
+            OrderBooks[symbol].getQuote(query_time)
+            OrderBooks[symbol].writeOrderBooktoDB(query_time)
         time.sleep(1)
 
 
@@ -135,6 +33,24 @@ def create_subscription_message(symbols):
         }
     }
 
+def create_unsubscribe_message(symbols):
+    return {
+        "method": "unsubscribe",
+        "params": {
+            "channel": "book",
+            "symbol": symbols
+        }
+    }
+
+def reset_websocket(ws, symbols):
+    unsubscribe_message = create_unsubscribe_message(symbols)
+    ws.send(json.dumps(unsubscribe_message))
+    print(f"Unsubscribed from {symbols}")
+
+    # Re-subscribe to the symbol
+    subscription_message = create_subscription_message(symbols)
+    ws.send(json.dumps(subscription_message))
+    print(f"Re-subscribed to {symbols}")
 
 def on_message(ws, message):
     message = json.loads(message, parse_float=Decimal)
@@ -154,21 +70,27 @@ def on_message(ws, message):
         orderBook.bidMap = dict(orderBook.bids)
         orderBook.askMap = dict(orderBook.asks)
         orderBook.checksum = generate_checksum(orderBook.bids, orderBook.asks)
-        assert orderBook.checksum == messageData['checksum'], "Snapshot checksum error"
+        if not validate_checksum(orderBook.checksum, messageData['checksum']):
+            print("{} Snapshot checksum error".format(messageData['symbol']))
+            reset_websocket(ws, [messageData['symbol']])
 
     elif message.get('type')=='update': #order book update
         #print("Update Message")
         messageData = message['data'][0]
         orderBook = OrderBooks[messageData['symbol']]
-        orderBook.updateOrderBook(messageData['bids'], messageData['asks'], messageData['checksum'], messageData['timestamp'])
+        orderBook.updateOrderBook(messageData['bids'], messageData['asks'], messageData['timestamp'])
+        orderBook.checksum = generate_checksum(orderBook.bids, orderBook.asks)
+        if not validate_checksum(orderBook.checksum, messageData['checksum']):
+            print("{} Update checksum error".format(messageData['symbol']))
+            reset_websocket(ws, [messageData['symbol']])
         #orderBook.getQuote()
     return
 
 def on_error(ws, error):
     print("Error:", error)
 
-def on_close(ws):
-    print("Connection closed")
+def on_close(ws, status_code, status_message):
+    print(f"Connection closed with code {status_code}, message: {status_message}")
 
 def on_open(ws):
     subscription_message = create_subscription_message(symbols)
@@ -177,6 +99,7 @@ def on_open(ws):
 
 
 def signal_handler(sig, frame):
+    ws.close()
     sys.exit(0)
 
 
