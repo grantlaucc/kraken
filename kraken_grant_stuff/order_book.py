@@ -24,7 +24,7 @@ class OrderBook:
         self.cursor.execute(SQLConfig.create_table_query(self.db_table_name))
         self.conn.commit()
 
-    def updateOrderBook(self, updateBids, updateAsks, checksum, timestamp):
+    def updateOrderBook(self, updateBids, updateAsks, timestamp):
         #TODO checksum and timestamp
         for updateBid in updateBids:
             if updateBid['qty'] != 0.0: 
@@ -43,9 +43,7 @@ class OrderBook:
                     self.askMap.pop(updateAsk['price'])
             self.asks = [[price, qty] for price, qty in sorted(self.askMap.items(), key=lambda x: x[0])][:self.depth]
             self.askMap = dict(self.asks)
-
-        self.checksum = generate_checksum(self.bids, self.asks)
-        assert self.checksum == checksum, "Update checksum error"
+        
         self.lastUpdate = timestamp
         return
     
@@ -89,3 +87,6 @@ def generate_checksum(bids, asks):
     full_str = asks_str + bids_str
     checksum = zlib.crc32(full_str.encode('utf-8'))
     return checksum
+
+def validate_checksum(calculatedChecksum, exchangeChecksum):
+    return calculatedChecksum == exchangeChecksum

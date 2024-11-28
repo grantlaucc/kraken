@@ -4,7 +4,7 @@ class SQLConfig:
         return f'''
         CREATE TABLE IF NOT EXISTS {table_name} (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp DATETIME,currency TEXT,
+            timestamp DATETIME,symbol TEXT,
             bid_price_1 REAL, bid_volume_1 REAL,
             bid_price_2 REAL, bid_volume_2 REAL,
             bid_price_3 REAL, bid_volume_3 REAL,
@@ -32,7 +32,7 @@ class SQLConfig:
     def insert_table_query(table_name):
         return f'''
         INSERT INTO {table_name} (
-            timestamp, currency,
+            timestamp, symbol,
             bid_price_1, bid_volume_1,
             bid_price_2, bid_volume_2,
             bid_price_3, bid_volume_3,
