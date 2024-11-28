@@ -87,14 +87,14 @@ class OrderBook:
         self.lastUpdate = timestamp
         return
     
-    def getQuote(self,query_time:datetime|None):
+    def getQuote(self,query_time):
 
         if len(self.bids)>0 and len(self.asks)>0:
 
-            bid_prices = [str(self.bids[i][0]) for i in range(10)]
-            bid_volumes = [str(self.bids[i][1]) for i in range(10)]
-            ask_prices = [str(self.asks[i][0]) for i in range(10)]
-            ask_volumes = [str(self.asks[i][1]) for i in range(10)]
+            bid_prices = [str(self.bids[i][0]) for i in range(self.depth)]
+            bid_volumes = [str(self.bids[i][1]) for i in range(self.depth)]
+            ask_prices = [str(self.asks[i][0]) for i in range(self.depth)]
+            ask_volumes = [str(self.asks[i][1]) for i in range(self.depth)]
 
             # Prepare the values for insertion
             values = []
