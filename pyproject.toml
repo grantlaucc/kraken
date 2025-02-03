@@ -12,7 +12,8 @@ dependencies = [
     "krakenex",
     "pandas",
     "websocket-client",
-    "matplotlib"
+    "matplotlib",
+    "python-dotenv"
 ]
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
