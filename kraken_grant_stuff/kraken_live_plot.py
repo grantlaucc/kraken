@@ -2,6 +2,7 @@ import threading
 import time
 import numpy as np
 import matplotlib.pyplot as plt
+import datetime as dt
 from matplotlib.animation import FuncAnimation
 
 # Import your WebSocket logic and the global OrderBooks
@@ -61,7 +62,8 @@ def update_plot(frame, ax, symbol="BTC/USD"):
     if not order_book:
         ax.set_title(f"No data for {symbol} yet...")
         return
-
+    
+    order_book.getQuote(dt.datetime.now())
     # Build the depth arrays for bids and asks
     bid_prices, bid_depth, ask_prices, ask_depth = build_depth_arrays(order_book)
 
@@ -76,7 +78,7 @@ def update_plot(frame, ax, symbol="BTC/USD"):
 
     ax.set_xlabel("Price")
     ax.set_ylabel("Cumulative Size")
-    ax.set_title(f"Live Order Book Depth: {symbol}")
+    ax.set_title(f"Kraken Live Order Book Depth: {symbol}")
     ax.legend()
 
 def main():

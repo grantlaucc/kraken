@@ -13,7 +13,7 @@ class OrderBook:
         self.askMap = askMap
         self.checksum = checksum
         self.lastUpdate = lastUpdate
-        self.db_file = 'kraken_quotes.db'
+        self.db_file = 'kraken_quotes_{}.db'.format(self.depth)
         self.db_table_name = re.sub(r'\W', '_', self.symbol)
 
         # Connect to SQLite database (or create it)
@@ -21,7 +21,7 @@ class OrderBook:
         self.cursor = self.conn.cursor()
         print("db connected")
         # Create the table if it doesn't exist
-        self.cursor.execute(SQLConfig.create_table_query(self.db_table_name))
+        self.cursor.execute(SQLConfig.create_table_query(self.db_table_name, self.depth))
         self.conn.commit()
 
     def updateOrderBook(self, updateBids, updateAsks, timestamp):
@@ -66,20 +66,20 @@ class OrderBook:
                 values.extend([str(self.asks[i][0]), str(self.asks[i][1])])
 
             #print(values)
-            self.cursor.execute(SQLConfig.insert_table_query(self.db_table_name), values)
+            self.cursor.execute(SQLConfig.insert_table_query(self.db_table_name, self.depth), values)
             self.conn.commit()
 
 def generate_checksum(bids, asks):
     # Step 1: Generate the formatted string for asks (sorted in ascending order)
     asks_str = ''
-    for ask in asks:  # Top 10 asks, sorted from low to high price
+    for ask in asks[:10]:  # Top 10 asks, sorted from low to high price
         price_str = str(ask[0]).replace('.', '').lstrip('0')
         qty_str = str(ask[1]).replace('.', '').lstrip('0')
         asks_str += price_str + qty_str
 
     # Step 2: Generate the formatted string for bids (sorted in descending order)
     bids_str = ''
-    for bid in bids:  # Top 10 bids, sorted from high to low price
+    for bid in bids[:10]:  # Top 10 bids, sorted from high to low price
         price_str = str(bid[0]).replace('.', '').lstrip('0')
         qty_str = str(bid[1]).replace('.', '').lstrip('0')
         bids_str += price_str + qty_str
