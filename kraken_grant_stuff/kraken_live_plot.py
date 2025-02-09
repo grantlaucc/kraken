@@ -3,16 +3,12 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 import datetime as dt
+import signal
+import sys
 from matplotlib.animation import FuncAnimation
-
-# Import your WebSocket logic and the global OrderBooks
 from kraken_l2 import OrderBooks, start_websocket
 
-# We'll keep track of time (x-axis) and best bid (y-axis)
-times = []
-best_bids = []
-
-start_time = time.time()
+symbol = "BTC/USD"
 
 def build_depth_arrays(order_book):
     """
@@ -48,7 +44,7 @@ def build_depth_arrays(order_book):
     return bid_prices, bid_depth, ask_prices, ask_depth
 
 
-def update_plot(frame, ax, symbol="BTC/USD"):
+def update_plot(frame, ax, symbol=symbol):
     """
     Matplotlib animation callback to plot the *depth* of the order book.
     It fetches the current bids/asks from OrderBooks[symbol],
@@ -63,25 +59,29 @@ def update_plot(frame, ax, symbol="BTC/USD"):
         ax.set_title(f"No data for {symbol} yet...")
         return
     
-    order_book.getQuote(dt.datetime.now())
     # Build the depth arrays for bids and asks
     bid_prices, bid_depth, ask_prices, ask_depth = build_depth_arrays(order_book)
 
     # Plot bids (if any)
     if bid_prices:
         # We'll do a step plot for depth
-        ax.step(bid_prices, bid_depth, where='post', color='green', label='Bids')
+        ax.step(bid_prices, bid_depth, where='post', color='green')
 
     # Plot asks (if any)
     if ask_prices:
-        ax.step(ask_prices, ask_depth, where='post', color='red', label='Asks')
+        ax.step(ask_prices, ask_depth, where='post', color='red')
 
     ax.set_xlabel("Price")
     ax.set_ylabel("Cumulative Size")
-    ax.set_title(f"Kraken Live Order Book Depth: {symbol}")
-    ax.legend()
+    ax.set_title(f"Kraken {symbol} {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", loc='left', fontsize='small')
+    ax.set_title(f"Mid: {order_book.getMid()}", loc='right', fontsize='small')
+
+def signal_handler(sig, frame):
+    plt.close('all')
+    sys.exit(0)
 
 def main():
+    signal.signal(signal.SIGINT, signal_handler)
     # 1) Start the WebSocket in a background thread
     ws_thread = threading.Thread(target=start_websocket, daemon=True)
     ws_thread.start()

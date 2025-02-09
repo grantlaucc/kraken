@@ -47,6 +47,10 @@ class OrderBook:
         self.lastUpdate = timestamp
         return
     
+    def getMid(self):
+        if len(self.bids)>0 and len(self.asks)>0:
+            return (self.bids[0][0]+self.asks[0][0])/2
+
     def getQuote(self,query_time):
         if len(self.bids)>0 and len(self.asks)>0:
             print(query_time.strftime('%Y-%m-%d %H:%M:%S')+"\t"
@@ -54,6 +58,7 @@ class OrderBook:
                   +str(self.bids[0][0])+"/"+str(self.asks[0][0])+"\t"
                   +str(self.bids[0][1])+"x"+str(self.asks[0][1])
                 )
+            return
     
     def writeOrderBooktoDB(self, query_time):
         if len(self.bids)>0 and len(self.asks)>0:
