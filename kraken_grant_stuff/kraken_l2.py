@@ -11,7 +11,11 @@ from order_book import OrderBook, generate_checksum, validate_checksum
 
 # Define the WebSocket URL for the Kraken API
 ws_url = "wss://ws.kraken.com/v2"
-symbols = ["BTC/USD", "ETH/USD"]  
+#symbols = ["BTC/USD", "ETH/USD"]
+symbols = ['BTC/USD']
+ORDER_BOOK_DEPTH = 25  
+WRITE_TO_DB = True
+
 
 OrderBooks = {}
 
@@ -19,7 +23,7 @@ def queryOrderBook():
     while True:
         query_time = dt.datetime.now()
         for symbol in OrderBooks:
-            OrderBooks[symbol].getQuote(query_time)
+            #OrderBooks[symbol].getQuote(query_time)
             OrderBooks[symbol].writeOrderBooktoDB(query_time)
         time.sleep(1)
 
@@ -29,7 +33,8 @@ def create_subscription_message(symbols):
         "method": "subscribe",
         "params": {
             "channel": "book",
-            "symbol": symbols
+            "symbol": symbols,
+            "depth": ORDER_BOOK_DEPTH
         }
     }
 
@@ -58,6 +63,7 @@ def on_message(ws, message):
         pass
 
     elif message.get('method')=='subscribe':
+        print(message)
         newOrderBook = OrderBook(message['result']['symbol'], message['result']['depth'], lastUpdate=message['time_out'])
         OrderBooks[message['result']['symbol']]=newOrderBook
 
@@ -98,25 +104,31 @@ def on_open(ws):
     print("Subscribed to:", symbols)
 
 
-def signal_handler(sig, frame):
-    ws.close()
-    sys.exit(0)
+def start_websocket():
+    ws = websocket.WebSocketApp(
+        ws_url,
+        on_open=on_open,
+        on_message=on_message,
+        on_error=on_error,
+        on_close=on_close
+    )
+    
+    # Start the thread that periodically queries the order book and writes to DB
+    if WRITE_TO_DB:
+        queryThread = threading.Thread(target=queryOrderBook, daemon=True)
+        queryThread.start()
 
+    # Blocking call - runs forever in this thread
+    ws.run_forever()
 
 if __name__ == "__main__":
-    #websocket.enableTrace(True)
+    def signal_handler(sig, frame):
+        print("Caught Ctrl+C, exiting...")
+        sys.exit(0)
+
     signal.signal(signal.SIGINT, signal_handler)
-    ws = websocket.WebSocketApp(ws_url,
-                                on_open=on_open,
-                                on_message=on_message,
-                                on_error=on_error,
-                                on_close=on_close)
-    
-    queryThread = threading.Thread(target=queryOrderBook, daemon=True)
-    queryThread.start()
 
-    ws.run_forever() 
-
-
+    print("Running kraken_l2.py as a standalone script. Starting WebSocket...")
+    start_websocket()
    
      
