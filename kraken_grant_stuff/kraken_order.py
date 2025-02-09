@@ -11,10 +11,13 @@ import hashlib
 import hmac
 import urllib.request
 from dotenv import load_dotenv
+from kraken_balances import KrakenBalances
 
 ws_url = "wss://ws-auth.kraken.com/v2"
 api_token = None
 prompt_event = threading.Event()
+
+myKrakenBalances = None
 
 def loadKrakenKeys():
     load_dotenv("/Users/grantlau/Documents/QuantStuff/kraken/.env")
@@ -60,7 +63,7 @@ def create_subscription_message_balances(token, snapshot=True):
         }
     }
 
-def create_unsubscription_message_balances(token):
+def create_unsubscribe_message_balances(token):
     return {
         "method": "unsubscribe",
         "params": {
@@ -93,6 +96,8 @@ def send_market_order(ws, side, order_qty, symbol, token):
     }
     
     ws.send(json.dumps(order_message))
+    return
+
 
 def handle_manual_order():
     orderString = input("Enter side, order_qty, symbol, type:\n")
@@ -112,15 +117,19 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 def on_message(ws, message):
+    global myKrakenBalances
     message = json.loads(message)
-    if message.get('channel')=='balances':
-        balance_data = message.get('data')
-        for asset in balance_data:
-            print("{}: {}".format(asset.get('asset'), asset.get('balance')))
-        
+    #if message.get('channel')!='heartbeat':
+        #print(message)
+    if message.get('channel')=='balances' and message.get('type')=='snapshot':
+        myKrakenBalances = KrakenBalances()
+        myKrakenBalances.balances = {item["asset"]: item["balance"] for item in message.get('data')}
+        print("Snapshot Balances")
+        myKrakenBalances.print_balances()
+
         prompt_event.set()
         
-        #unsubscribe_message_balances = create_unsubscription_message_balances(api_token)
+        #unsubscribe_message_balances = create_unsubscribe_message_balances(api_token)
         #ws.send(json.dumps(unsubscribe_message_balances))
     
     elif message.get('method')=='add_order':
@@ -137,21 +146,24 @@ def on_close(ws, status_code, status_message):
 def on_open(ws):
     def run(*args):
         global api_token
+        global myKrakenBalances
         api_token = get_websocket_token()
-
-        prompt_event.set()
+        subscription_message_balances = create_subscription_message_balances(api_token)
+        ws.send(json.dumps(subscription_message_balances))
 
         while True:
             prompt_event.wait()
 
-            action = input("Type 'order', 'balances', or 'exit':\n")
+            action = input("Type 'order', 'balances' or 'exit':\n")
             if action == 'order':
                 prompt_event.clear()
                 handle_manual_order()
             elif action == 'balances':
                 prompt_event.clear()
-                subscription_message_balances = create_subscription_message_balances(api_token)
-                ws.send(json.dumps(subscription_message_balances))
+                myKrakenBalances.print_balances()
+                prompt_event.set()
+                
+                
             elif action == 'exit':
                 break
         ws.close()
@@ -167,4 +179,4 @@ if __name__ == "__main__":
                                 on_error=on_error,
                                 on_close=on_close)
 
-    ws.run_forever() #maybe consider ping_interval = 30
+    ws.run_forever(ping_interval = 30) #maybe consider ping_interval = 30
