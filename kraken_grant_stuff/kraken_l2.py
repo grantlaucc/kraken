@@ -23,7 +23,7 @@ def queryOrderBook():
     while True:
         query_time = dt.datetime.now()
         for symbol in OrderBooks:
-            #OrderBooks[symbol].getQuote(query_time)
+            OrderBooks[symbol].getQuote(query_time)
             OrderBooks[symbol].writeOrderBooktoDB(query_time)
         time.sleep(1)
 
