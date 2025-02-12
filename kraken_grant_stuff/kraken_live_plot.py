@@ -8,7 +8,7 @@ import sys
 from matplotlib.animation import FuncAnimation
 from kraken_l2 import OrderBooks, start_websocket
 
-symbol = "BTC/USD"
+symbol = "XRP/USD"
 
 def build_depth_arrays(order_book):
     """
