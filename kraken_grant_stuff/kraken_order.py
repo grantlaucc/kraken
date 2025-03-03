@@ -12,6 +12,7 @@ import hmac
 import urllib.request
 from dotenv import load_dotenv
 from kraken_balances import KrakenBalances
+import kraken_executions
 
 ws_url = "wss://ws-auth.kraken.com/v2"
 api_token = None
@@ -63,6 +64,17 @@ def create_subscription_message_balances(token, snapshot=True):
         }
     }
 
+def create_subscription_message_executions(token):
+    return {
+        "method": "subscribe",
+        "params": {
+        "channel": "executions",
+        "token": token,
+        "snap_orders": True,
+        "snap_trades": True
+        }
+    }
+
 def create_unsubscribe_message_balances(token):
     return {
         "method": "unsubscribe",
@@ -90,7 +102,7 @@ def send_market_order(ws, side, order_qty, symbol, token):
             "order_qty": order_qty,
             "symbol": symbol,
             "token": token,
-            "validate": True  # Ensures the order is only validated, not executed
+            "validate": False  # Ensures the order is only validated, not executed
         },
         "req_id": 1,  # Optional: Unique ID provided by the client
     }
@@ -119,11 +131,12 @@ def signal_handler(sig, frame):
 def on_message(ws, message):
     global myKrakenBalances
     message = json.loads(message)
-    #if message.get('channel')!='heartbeat':
+    if message.get('channel')!='heartbeat':
         #print(message)
+        pass
     if message.get('channel')=='balances' and message.get('type')=='snapshot':
         myKrakenBalances = KrakenBalances()
-        myKrakenBalances.balances = {item["asset"]: item["balance"] for item in message.get('data')}
+        myKrakenBalances.snapshot_balances(message.get('data'))
         print("Snapshot Balances")
         myKrakenBalances.print_balances()
 
@@ -132,8 +145,19 @@ def on_message(ws, message):
         #unsubscribe_message_balances = create_unsubscribe_message_balances(api_token)
         #ws.send(json.dumps(unsubscribe_message_balances))
     
+    elif message.get('channel')=='balances' and message.get('type')=='update':
+        myKrakenBalances.update_balances(message.get('data'))
+        
+
+    elif message.get('channel')=='executions' and message.get('type')=='snapshot':
+        kraken_executions.handle_executions_snapshot(message.get('data'))
+        #TODO look for snapshot balances and snapshot executions before prompt_event.set()
+
+    elif message.get('channel')=='executions' and message.get('type')=='update':
+        kraken_executions.handle_executions_update(message.get('data'))
+
     elif message.get('method')=='add_order':
-        print("Order req_id: {}; Success: {}".format(message.get('req_id'), message.get('success')))
+        print("Order req_id: {}; Success: {}".format(message.get('result').get('order_id'), message.get('success')))
         prompt_event.set()
 
 def on_error(ws, error):
@@ -151,6 +175,9 @@ def on_open(ws):
         subscription_message_balances = create_subscription_message_balances(api_token)
         ws.send(json.dumps(subscription_message_balances))
 
+        subscription_message_executions = create_subscription_message_executions(api_token)
+        ws.send(json.dumps(subscription_message_executions))
+
         while True:
             prompt_event.wait()
 
@@ -162,7 +189,6 @@ def on_open(ws):
                 prompt_event.clear()
                 myKrakenBalances.print_balances()
                 prompt_event.set()
-                
                 
             elif action == 'exit':
                 break
