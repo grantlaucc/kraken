@@ -3,7 +3,7 @@ from data.queries import SQLConfig
 
 krakenExecutionsDB = "kraken_executions.db"
 
-def handle_executions_snapshot(tradeData, writeToDB = True):
+def handle_executions_snapshot(tradeData, writeToDB = False):
     conn = sqlite3.connect(krakenExecutionsDB)
     cursor = conn.cursor()
     cursor.execute(SQLConfig.create_executions_table_query())
