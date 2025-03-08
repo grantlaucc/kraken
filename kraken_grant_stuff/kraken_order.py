@@ -102,7 +102,7 @@ def send_market_order(ws, side, order_qty, symbol, token):
             "order_qty": order_qty,
             "symbol": symbol,
             "token": token,
-            "validate": False  # Ensures the order is only validated, not executed
+            "validate": True  # Ensures the order is only validated, not executed
         },
         "req_id": 1,  # Optional: Unique ID provided by the client
     }
@@ -189,7 +189,9 @@ def on_open(ws):
                 prompt_event.clear()
                 myKrakenBalances.print_balances()
                 prompt_event.set()
-                
+
+            elif action == 'test':
+                pass
             elif action == 'exit':
                 break
         ws.close()
