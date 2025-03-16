@@ -13,12 +13,14 @@ import urllib.request
 from dotenv import load_dotenv
 from kraken_balances import KrakenBalances
 import kraken_executions
+import kraken_l2
 
 ws_url = "wss://ws-auth.kraken.com/v2"
 api_token = None
 prompt_event = threading.Event()
 
 myKrakenBalances = None
+ws = None
 
 def loadKrakenKeys():
     load_dotenv("/Users/grantlau/Documents/QuantStuff/kraken/.env")
@@ -30,10 +32,6 @@ def get_websocket_token():
     """ Obtain a token from Kraken for WebSocket API. 
         Note this token must be used within 15 mins.
     """
-    api_path = "https://api.kraken.com/0/private/GetWebSocketsToken"
-    api_nonce = str(int(time.time() * 1000))
-    api_post = 'nonce=' + api_nonce
-
     api_key, api_secret = loadKrakenKeys()
     api_path = '/0/private/GetWebSocketsToken'
     api_nonce = str(int(time.time()*1000))
@@ -125,7 +123,9 @@ def handle_manual_order():
     
 
 def signal_handler(sig, frame):
-    ws.close()
+    global ws
+    if ws:
+        ws.close()
     sys.exit(0)
 
 def on_message(ws, message):
@@ -198,9 +198,12 @@ def on_open(ws):
     thread = threading.Thread(target=run)
     thread.start()
 
-if __name__ == "__main__":
+def main():
     #websocket.enableTrace(True)
+    global ws
     signal.signal(signal.SIGINT, signal_handler)
+    ws_thread_l2 = threading.Thread(target=kraken_l2.start_websocket, daemon=True)
+    ws_thread_l2.start()
     ws = websocket.WebSocketApp(ws_url,
                                 on_open=on_open,
                                 on_message=on_message,
@@ -208,3 +211,6 @@ if __name__ == "__main__":
                                 on_close=on_close)
 
     ws.run_forever(ping_interval = 30) #maybe consider ping_interval = 30
+
+if __name__ == "__main__":
+    main()
