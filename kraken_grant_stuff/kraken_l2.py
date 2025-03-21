@@ -13,7 +13,7 @@ from order_book import OrderBook, generate_checksum, validate_checksum
 ws_url = "wss://ws.kraken.com/v2"
 symbols = ["BTC/USD", "ETH/USD"]
 ORDER_BOOK_DEPTH = 25  
-WRITE_TO_DB = False
+WRITE_TO_DB = True
 
 
 OrderBooks = {}

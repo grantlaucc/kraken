@@ -74,6 +74,34 @@ class OrderBook:
             self.cursor.execute(SQLConfig.insert_table_query(self.db_table_name, self.depth), values)
             self.conn.commit()
 
+    
+    def populateHistorical(self, row):
+        """
+        Populate the OrderBook object using a single row of data from the CSV file.
+            
+        :param row: A single row of data from the CSV (in the form of a dictionary).
+        """
+        # Extract bids and asks
+        bids = []
+        asks = []
+        
+        for i in range(1, 26):  # 25 bids and 25 asks
+            bid_price = row[f'bid_price_{i}']
+            bid_volume = row[f'bid_volume_{i}']
+            ask_price = row[f'ask_price_{i}']
+            ask_volume = row[f'ask_volume_{i}']
+            
+            # Add the bid and ask to their respective lists
+            if bid_price and bid_volume:
+                bids.append([float(bid_price), float(bid_volume)])
+            if ask_price and ask_volume:
+                asks.append([float(ask_price), float(ask_volume)])
+
+        # Now populate the order book
+        self.symbol = row['symbol']
+        self.bids = bids
+        self.asks = asks
+
 def generate_checksum(bids, asks):
     # Step 1: Generate the formatted string for asks (sorted in ascending order)
     asks_str = ''
@@ -95,3 +123,4 @@ def generate_checksum(bids, asks):
 
 def validate_checksum(calculatedChecksum, exchangeChecksum):
     return calculatedChecksum == exchangeChecksum
+
