@@ -8,9 +8,8 @@ class SQLConfig:
         """
         # Basic columns
         columns = [
-            "id INTEGER PRIMARY KEY AUTOINCREMENT",
-            "timestamp DATETIME",
-            "symbol TEXT"
+            "timestamp TIMESTAMP",
+            "symbol SYMBOL"
         ]
         
         # Bid columns
@@ -50,8 +49,8 @@ class SQLConfig:
         
         # Generate the comma-separated list of columns
         column_list_str = ", ".join(columns)
-        # Make the same number of '?' placeholders
-        placeholders = ", ".join(["?"] * len(columns))
+        # Generate the placeholders for values in the SQL query
+        placeholders = ", ".join(["{}"] * len(columns))  # Using '{}' as placeholder for formatting
         
         return f"""
         INSERT INTO {table_name} (

@@ -2,6 +2,8 @@ import sqlite3
 from data.queries import SQLConfig
 import zlib
 import re
+import requests
+import urllib.parse as par
 
 class OrderBook:
     def __init__(self, symbol, depth, bids=[], asks=[], bidMap = {}, askMap = {}, checksum=None, lastUpdate=None):
@@ -13,16 +15,20 @@ class OrderBook:
         self.askMap = askMap
         self.checksum = checksum
         self.lastUpdate = lastUpdate
-        self.db_file = 'kraken_quotes_{}.db'.format(self.depth)
+        self.db_url = 'http://localhost:9000'
         self.db_table_name = re.sub(r'\W', '_', self.symbol)
+        self.create_table()
 
-        # Connect to SQLite database (or create it)
-        self.conn = sqlite3.connect(self.db_file,check_same_thread=False)
-        self.cursor = self.conn.cursor()
-        print("db connected")
-        # Create the table if it doesn't exist
-        self.cursor.execute(SQLConfig.create_table_query(self.db_table_name, self.depth))
-        self.conn.commit()
+    def create_table(self):
+        create_table_query = par.quote(SQLConfig.create_table_query(self.db_table_name, self.depth))
+        try:
+            response = requests.get(f"{self.db_url}/exec?query={create_table_query}")
+            if response.status_code == 200:
+                print(f"Table {self.db_table_name} created or already exists.")
+            else:
+                print(f"Failed to create table: {response.text}")
+        except Exception as e:
+            print(f"Error connecting to QuestDB: {e}")
 
     def updateOrderBook(self, updateBids, updateAsks, timestamp):
         #TODO checksum and timestamp
@@ -64,15 +70,20 @@ class OrderBook:
         if len(self.bids)>0 and len(self.asks)>0:
             # Prepare the values for insertion
             values = []
-            values+=[query_time.strftime('%Y-%m-%d %H:%M:%S'),self.symbol]
+            timestamp_str = f"'{query_time.strftime('%Y-%m-%d %H:%M:%S')}'"  # Wrap in single quotes
+            symbol_str = f"'{self.symbol}'"  # Wrap symbol in single quotes
+            values += [timestamp_str, symbol_str]
             for i in range(self.depth):
                 values.extend([str(self.bids[i][0]), str(self.bids[i][1])])
             for i in range(self.depth):
                 values.extend([str(self.asks[i][0]), str(self.asks[i][1])])
 
             #print(values)
-            self.cursor.execute(SQLConfig.insert_table_query(self.db_table_name, self.depth), values)
-            self.conn.commit()
+            insert_query = SQLConfig.insert_table_query(self.db_table_name, self.depth).format(*values)
+            response = requests.get(f"{self.db_url}/exec?query={insert_query}")
+            if response.status_code != 200:
+                print(f"Failed to insert data: {response.text}")
+
 
     
     def populateHistorical(self, row):
