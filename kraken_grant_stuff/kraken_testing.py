@@ -7,64 +7,16 @@ import time
 import datetime as dt
 import sqlite3
 import csv
-from order_book import OrderBook, generate_checksum, validate_checksum
+from order_book import OrderBook
 
-from collections import deque
+import Strategies.order_book_imbalance_strat as strat
+
 
 liveData = False
 historicalDataFile = "/Users/grantlau/Documents/QuantStuff/CryptoData/kraken_quotes_25.csv"
 testKrakenBalances = None
 conn = None
 cursor = None
-
-
-#STRATEGY PARAMETERS
-symbols = ["BTC/USD"]
-IMBALANCE_MOVING_AVG_LEN = 10
-IMBALANCE_SCALING_CONSTANT = 30
-SIGNAL_THRESHOLD = 0.3
-positionLimits = {"BTC/USD":10}
-
-
-
-imbalances = deque(maxlen=IMBALANCE_MOVING_AVG_LEN)
-def decision(orderBook, krakenBalances):
-    currentBalance = krakenBalances.balances['BTC/USD']
-    positionLimit = positionLimits['BTC/USD']
-
-    bidVolume = sum([qty for _, qty in orderBook.bids])
-    askVolume = sum([qty for _, qty in orderBook.asks])
-    imbalances.append(bidVolume - askVolume)
-    avgImbalance = sum(imbalances) / len(imbalances)
-    targetPosition = float(avgImbalance/IMBALANCE_SCALING_CONSTANT)
-    aggression = targetPosition - (currentBalance/positionLimit)
-    aggression = max(-1, min(round(aggression,1), 1))
-
-    #BUY
-    askPrice = float(orderBook.asks[0][0])
-    bidPrice = float(orderBook.bids[0][0])
-    if aggression>SIGNAL_THRESHOLD and currentBalance+aggression<=positionLimit:
-        qty = aggression
-        record_transaction('buy', qty, askPrice)
-        krakenBalances.balances['BTC/USD']+=qty
-        krakenBalances.balances['USD']-=qty*askPrice
-
-    #SELL
-    elif aggression<-SIGNAL_THRESHOLD and currentBalance+aggression>=-positionLimit:
-        qty = -aggression
-        record_transaction('sell', qty, bidPrice)
-        krakenBalances.balances['BTC/USD']-=qty
-        krakenBalances.balances['USD']+=qty*bidPrice
-
-    #Get Liquidation Value
-    if krakenBalances.balances['BTC/USD']>0:
-        valueBTC = bidPrice*krakenBalances.balances['BTC/USD']
-    else:
-        valueBTC = askPrice*krakenBalances.balances['BTC/USD']
-    liquidationValue = valueBTC+krakenBalances.balances['USD']
-
-    print(liquidationValue, krakenBalances.balances)
-    return aggression
 
 def setup_database():
     global conn, cursor
@@ -85,15 +37,16 @@ def record_transaction(action, quantity, price):
     conn.commit()
     print("{} {} @ {}".format(action, quantity, price))
 
-
 def testStrategyLive():
     while True:
-        orderBook = kraken_l2.OrderBooks.get(symbols[0])
+        orderBook = kraken_l2.OrderBooks.get(strat.symbols[0])
         if not orderBook:
-            print(f"No data for {symbols[0]} yet...")
+            print(f"No data for {strat.symbols[0]} yet...")
         else:
             orderBook.getQuote(dt.datetime.now())
-            decision(orderBook, testKrakenBalances)
+            action,qty,price = strat.decision(orderBook, testKrakenBalances)
+            if action:
+                record_transaction(action,qty,price)
         time.sleep(1)
 
 def testStrategyHistorical():
@@ -105,7 +58,9 @@ def testStrategyHistorical():
                 #break
             historicalOrderBook.populateHistorical(row)
             historicalOrderBook.getQuote(dt.datetime.strptime(row['timestamp'], '%Y-%m-%d %H:%M:%S'))
-            decision(historicalOrderBook, testKrakenBalances)
+            action,qty,price = strat.decision(historicalOrderBook, testKrakenBalances)
+            if action:
+                record_transaction(action,qty,price)
         return
 
 def signal_handler(sig, frame):
