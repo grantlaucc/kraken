@@ -89,6 +89,7 @@ def on_message(ws, message):
             print("{} Update checksum error".format(messageData['symbol']))
             reset_websocket(ws, [messageData['symbol']])
         #orderBook.getQuote()
+        #print("Update Message", orderBook.lastUpdate)
     return
 
 def on_error(ws, error):
