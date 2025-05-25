@@ -1,3 +1,11 @@
+execution_update_mapping = {
+    "snapshot": dict(timestamp="timestamp", symbol="symbol", order_id="order_id", exec_id="exec_id", exec_type="exec_type", trade_id="trade_id", side="side", qty="last_qty", price="last_price", liquidity_ind="liquidity_ind", cost="cost", order_userref="order_userref", order_status="order_status", order_type="order_type", fee_usd_equiv="fee_usd_equiv"),
+    "update_pending_new": dict(timestamp="timestamp", symbol="symbol", order_id="order_id", exec_id="exec_id", exec_type="exec_type", trade_id="trade_id", side="side", qty="order_qty", cost="cum_cost", order_userref="order_userref", order_status="order_status", order_type="order_type", fee_usd_equiv="fee_usd_equiv"),
+    "update_new": dict(timestamp="timestamp", symbol="symbol", order_id="order_id", exec_id="exec_id", exec_type="exec_type", order_userref="order_userref", order_status="order_status", fee_usd_equiv="fee_usd_equiv"),
+    "update_partially_filled": dict(timestamp="timestamp", symbol="symbol", order_id="order_id", exec_id="exec_id", exec_type="exec_type", trade_id="trade_id", side="side", qty="cum_qty", price="avg_price", liquidity_ind="liquidity_ind", cost="cum_cost", order_userref="order_userref", order_status="order_status", fee_usd_equiv="fee_usd_equiv"),
+    "update_filled": dict(timestamp="timestamp", order_id="order_id", exec_type="exec_type", qty="cum_qty", price="avg_price", cost="cum_cost", order_userref="order_userref", order_status="order_status", fee_usd_equiv="fee_usd_equiv")
+    }
+
 class SQLConfig:
     @staticmethod
     def create_table_query(table_name, depth):
@@ -65,21 +73,21 @@ class SQLConfig:
         """
         # Basic columns
         columns = [
-            "id INTEGER PRIMARY KEY AUTOINCREMENT",
-            "timestamp DATETIME",
-            "symbol TEXT",
+            "timestamp TIMESTAMP",
+            "sequence INTEGER",
+            "symbol SYMBOL",
             "order_id TEXT",
             "exec_id TEXT",
-            "exec_type TEXT",
+            "exec_type SYMBOL",
             "trade_id INTEGER",
-            "side TEXT",
-            "last_qty REAL",
-            "last_price REAL",
-            "liquidity_ind TEXT",
+            "side SYMBOL",
+            "qty REAL",
+            "price REAL",
+            "liquidity_ind SYMBOL",
             "cost REAL",
             "order_userref INTEGER",
-            "order_status TEXT",
-            "order_type TEXT",
+            "order_status SYMBOL",
+            "order_type SYMBOL",
             "fee_usd_equiv REAL"
         ]
         
@@ -93,44 +101,48 @@ class SQLConfig:
         """
     
     @staticmethod
-    def insert_executions_table_query(trade):
+    def insert_executions_table_query(event, trade, sequence=None):
         """
         Static method that generates the SQL INSERT or UPDATE query string for a single trade.
-        
+        :param event: String type of even calling the insert. Either snapshot or order_status
         :param trade: A dictionary containing trade information.
         :return: A string containing the SQL INSERT or UPDATE query.
         """
+
         # Default values for missing fields in trade data
-        order_id = trade.get('order_id', '')
-        exec_id = trade.get('exec_id', '')
-        exec_type = trade.get('exec_type', '')
-        trade_id = trade.get('trade_id', 'NULL')
-        symbol = trade.get('symbol', '')
-        side = trade.get('side', '')
-        last_qty = trade.get('last_qty', 'NULL')
-        last_price = trade.get('last_price', 'NULL')
-        liquidity_ind = trade.get('liquidity_ind', '')
-        cost = trade.get('cost', 'NULL')
-        order_userref = trade.get('order_userref', 'NULL')
-        order_status = trade.get('order_status', '')
-        order_type = trade.get('order_type', '')
-        fee_usd_equiv = trade.get('fee_usd_equiv', 'NULL')
-        timestamp = trade.get('timestamp', '')
+        timestamp = trade.get(execution_update_mapping[event].get('timestamp',""), "")
+        sequence = 'NULL' if sequence is None else sequence
+        symbol = trade.get(execution_update_mapping[event].get('symbol',""), "")
+        order_id = trade.get(execution_update_mapping[event].get('order_id',""), "")
+        exec_id = trade.get(execution_update_mapping[event].get('exec_id',""), "")
+        exec_type = trade.get(execution_update_mapping[event].get('exec_type',""), "")
+        trade_id = trade.get(execution_update_mapping[event].get('trade_id',"NULL"), "NULL")
+        side = trade.get(execution_update_mapping[event].get('side',""), "")
+        qty = trade.get(execution_update_mapping[event].get('qty',"NULL"), "NULL")
+        price = trade.get(execution_update_mapping[event].get('price',"NULL"), "NULL")
+        liquidity_ind = trade.get(execution_update_mapping[event].get('liquidity_ind',""), "")
+        cost = trade.get(execution_update_mapping[event].get('cost',"NULL"), "NULL")
+        order_userref = trade.get(execution_update_mapping[event].get('order_userref',"NULL"), "NULL")
+        order_status = trade.get(execution_update_mapping[event].get('order_status',""), "")
+        order_type = trade.get(execution_update_mapping[event].get('order_type',""), "")
+        fee_usd_equiv = trade.get(execution_update_mapping[event].get('fee_usd_equiv',"NULL"), "NULL")
 
         # SQL INSERT or UPDATE statement (UPSERT behavior)
         insert_or_update_query = f'''
-        INSERT OR REPLACE INTO EXECUTIONS (
-            order_id, exec_id, exec_type, trade_id, symbol, side, last_qty, 
-            last_price, liquidity_ind, cost, order_userref, order_status, 
-            order_type, fee_usd_equiv, timestamp
+        INSERT INTO EXECUTIONS (
+            timestamp, sequence, symbol,
+            order_id, exec_id, exec_type, trade_id, side, qty, 
+            price, liquidity_ind, cost, order_userref, order_status, 
+            order_type, fee_usd_equiv
         ) VALUES (
+            '{timestamp}', {sequence}, '{symbol}',
             '{order_id}', '{exec_id}', '{exec_type}', {trade_id}, 
-            '{symbol}', '{side}', {last_qty}, 
-            {last_price}, '{liquidity_ind}', {cost}, {order_userref}, 
-            '{order_status}', '{order_type}', {fee_usd_equiv}, 
-            '{timestamp}'
+            '{side}', {qty}, 
+            {price}, '{liquidity_ind}', {cost}, {order_userref}, 
+            '{order_status}', '{order_type}', {fee_usd_equiv}
         );
         '''
+        #print(insert_or_update_query)
         return insert_or_update_query
 
     @staticmethod
