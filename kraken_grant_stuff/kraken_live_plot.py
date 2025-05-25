@@ -62,6 +62,8 @@ def update_plot(frame, ax, symbol=symbol):
     # Build the depth arrays for bids and asks
     bid_prices, bid_depth, ask_prices, ask_depth = build_depth_arrays(order_book)
 
+    print("Bids:", bid_prices[:5], "Asks:", ask_prices[:5])
+
     # Plot bids (if any)
     if bid_prices:
         # We'll do a step plot for depth
@@ -91,7 +93,7 @@ def main():
     fig, ax = plt.subplots()
 
     # 3) Start FuncAnimation
-    ani = FuncAnimation(fig, update_plot, fargs=(ax,), interval=1000)  # update every 1s
+    ani = FuncAnimation(fig, update_plot, fargs=(ax,), interval=1000, cache_frame_data=False)  # update every 1s
 
     # 4) Show the plot
     plt.show()
