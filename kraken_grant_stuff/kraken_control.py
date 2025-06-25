@@ -68,7 +68,7 @@ def handle_manual_order():
         validate = False
     kraken_order.order(ws=ws, order_type=orderType, side=orderSide, qty=orderQty, limit_price=limitPrice, 
                         symbol=orderSymbol, token=api_token, validate=validate)
-    
+
 
 def signal_handler(sig, frame):
     global ws
@@ -126,6 +126,7 @@ def on_open(ws):
         subscription_message_executions = create_subscription_message_executions(api_token)
         ws.send(json.dumps(subscription_message_executions))
 
+        
         while True:
             prompt_event.wait()
 
@@ -144,8 +145,10 @@ def on_open(ws):
             elif action == 'exit':
                 break
         ws.close()
+        
     thread = threading.Thread(target=run)
     thread.start()
+
 
 def main():
     #websocket.enableTrace(True)
@@ -153,6 +156,8 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
     ws_thread_l2 = threading.Thread(target=kraken_l2.start_websocket, daemon=True)
     ws_thread_l2.start()
+
+
     ws = websocket.WebSocketApp(ws_url,
                                 on_open=on_open,
                                 on_message=on_message,
