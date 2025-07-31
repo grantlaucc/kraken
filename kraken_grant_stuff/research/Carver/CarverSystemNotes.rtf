@@ -1,0 +1,53 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2709
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica-Bold;\f1\fswiss\fcharset0 Helvetica;\f2\fswiss\fcharset0 Helvetica-Oblique;
+}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\b\fs24 \cf0 Forecast
+\f1\b0 \
+- Mean 10 and capped range (-20,20). Use 
+\f2\i forecast_scalar
+\f1\i0  to achieve this\
+\
+
+\f0\b Combined Forecast X (combining multiple forecast for instrument X)
+\f1\b0 \
+- Assign forecast weight for each forecast (sums to 1)\
+- Calculate Forecast diversification multiplier (FDM). \
+	- Avg of diagonal correlation of Forecasts (
+\f2\i the forecast itself) 
+\f1\i0 for instrument X.\
+	- Lookup table based on avg correlation, number of strategies. Or use pg.297\
+	- Cap max(FDM, +2.5)\
+- Rescaled Cominbed forecast =  weighted average of forecast * FDM\
+- Final Combined Forecast = cap(Rescaled combined forecast,-20,20)\
+\
+
+\f0\b Volatility Targeting
+\f1\b0 \
+\
+\
+
+\f0\b Position Sizing (Subsystem X position sizing)
+\f1\b0 \
+Annual Cash Volatility Target [$] / 16 -> Daily Cash volatility target\
+Annual Instrument Voalatility [$] / 16 -> Daily instrument value volatility (block size, currency factored in here)\
+Volatility_scalar = Daily Cash volatility target/daily instrument value volatility (exp. weighted, 35d lookback)\
+Subsystem position = final combined forecast * volatility_scalar\
+\
+
+\f0\b Subsystem Portfolio\
+
+\f1\b0 Instrument weight (sums to 1) obtained via 
+\f2\i handcrafting 
+\f1\i0 or 
+\f2\i bootstrapping 
+\f1\i0 or (equal weight)\
+Instrument Diversification Multiplier (IDM) use pg. 298 baed on correlation of returns\
+Portfolio Instrument Position = instrument subsystem position * instrument weight * IDM\
+round(portfolio Instrument Position)\
+Apply inertia -> Don\'92t trade unless abs(target position/current position - 1) > 10% #TODO look into optimizing this based on trading costs\
+}
