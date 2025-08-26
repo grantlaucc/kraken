@@ -15,8 +15,8 @@ def get_subsystem_portfolio(tickers, instrument_weights, position_sizing_df, cor
     else:
         return_df = pd.DataFrame()
         for ticker in tickers:
-            df = ohlc_data.load_ohlc_data_to_df(ticker)
-            return_series = df["close"].pct_change().rename(ticker)
+            price_series = ohlc_data.load_ohlc_data_to_df(ticker, selectCols=['close']).squeeze("columns")
+            return_series = price_series.pct_change().rename(ticker)
             return_df = pd.concat([return_df, return_series], axis=1)
         
         corr_matrix = return_df.corr()

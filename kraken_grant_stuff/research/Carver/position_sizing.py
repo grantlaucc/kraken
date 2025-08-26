@@ -13,9 +13,8 @@ def get_position_sizing(tickers, combined_forecasts_df, trading_capital, volatil
 
     for ticker in tickers:
         # Load close prices for this ticker
-        df = ohlc_data.load_ohlc_data_to_df(ticker, startDate=combined_forecasts_df.index.min(),
-    endDate=combined_forecasts_df.index.max())
-        price_series = df["close"]
+        price_series = ohlc_data.load_ohlc_data_to_df(ticker, startDate=combined_forecasts_df.index.min(),
+    endDate=combined_forecasts_df.index.max(), selectCols=['close']).squeeze("columns")
 
         # EWMA volatility (35-day based on Carver pg. 254) of PRICES [$]
         daily_returns = price_series.diff()

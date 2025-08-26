@@ -95,7 +95,7 @@ def insert_ohlc_to_questdb_ilp(ticker, ohlc_df, interval, host="localhost", port
         )
     print(f"Inserted {len(ohlc_df)} rows into {table_name} using ILP")
 
-def load_ohlc_data_to_df(ticker, interval=1440, questdb_url="http://localhost:9000/exec", startDate=None, endDate=None):
+def load_ohlc_data_to_df(ticker, interval=1440, questdb_url="http://localhost:9000/exec", startDate=None, endDate=None, selectCols = None):
     table_name = f"{ticker.replace('/', '_')}_{interval}"
 
     # Build WHERE clause based on start and end date
@@ -110,8 +110,13 @@ def load_ohlc_data_to_df(ticker, interval=1440, questdb_url="http://localhost:90
     where_clause = ""
     if where_clauses:
         where_clause = "WHERE " + " AND ".join(where_clauses)
-
-    query = f"SELECT * FROM {table_name} {where_clause} ORDER BY timestamp"
+    if isinstance(selectCols, list):
+        if "timestamp" not in selectCols:
+            selectCols.append("timestamp")
+            selectColsString = ", ".join(selectCols)
+        query = f"SELECT {selectColsString} FROM {table_name} {where_clause} ORDER BY timestamp"
+    else:
+        query = f"SELECT * FROM {table_name} {where_clause} ORDER BY timestamp"
 
     response = requests.get(questdb_url, params={"query": query, "format": "json"})
     if response.status_code != 200:
@@ -124,9 +129,11 @@ def load_ohlc_data_to_df(ticker, interval=1440, questdb_url="http://localhost:90
     df = pd.DataFrame(data, columns=columns)
     if not df.empty:
         df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
-        for col in ['open', 'high', 'low', 'close', 'vwap', 'volume']:
+        float_cols = {"open", "high", "low", "close", "vwap", "volume"} & set(df.columns)
+        for col in float_cols:
             df[col] = df[col].astype(float)
-        df['count'] = df['count'].astype(int)
+        if "count" in df.columns:
+            df['count'] = df['count'].astype(int)
 
     df = df.set_index('timestamp')
     return df
@@ -139,8 +146,13 @@ def download_ohlc_data(interval, tickers, startTimestamp, new_only=True):
 
 if __name__ == "__main__":
     interval = 1440
-    with open("/Users/grantlau/Documents/QuantStuff/kraken/kraken_grant_stuff/research/usdc_pairs.txt", "r") as file:
+    with open("/Users/grantlau/Documents/QuantStuff/kraken/kraken_grant_stuff/research/usd_pairs.txt", "r") as file:
         usdc_pairs = [line.strip() for line in file]
     startTimestamp = int(datetime(2023, 1, 1, 0, 0, 0, tzinfo=timezone.utc).timestamp())
 
+    for ticker in usdc_pairs:
+        tableName = ticker.replace("/","_")+"_"+str(interval)
+        create_table_if_not_exists(tableName)
     download_ohlc_data(interval=interval, tickers=usdc_pairs,startTimestamp=startTimestamp, new_only=True)
+
+

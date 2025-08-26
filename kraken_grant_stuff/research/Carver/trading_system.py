@@ -1,3 +1,4 @@
+#%%
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -12,56 +13,62 @@ import ohlc_data
 from datetime import datetime, timezone, timedelta
 
 
+def run_trading_system(tickers, forecasts, forecast_weights, trading_capital, volatility_target, instrument_weights):
+    #Combined Forecast
+    combined_forecasts_df = combined_forecast.get_combined_forecasts(tickers, forecasts, forecast_weights)
+    print("combined_forecasts_df complete")
+    print(combined_forecasts_df)
 
-with open("/Users/grantlau/Documents/QuantStuff/kraken/kraken_grant_stuff/research/usdc_pairs.txt", "r") as file:
-    usdc_pairs = [line.strip() for line in file]
+    #Volatility Targeting
 
-tickers = usdc_pairs#[0:4]
-forecasts = [forecast.EWMACSignal(L_fast=16, L_slow=64, forecast_scalar=3.75), 
-             forecast.EWMACSignal(L_fast=32, L_slow=128, forecast_scalar=2.65)]
-forecast_weights = np.array([0.6, 0.4])
+    #Position Sizing
+    position_sizing_df = position_sizing.get_position_sizing(tickers, combined_forecasts_df, trading_capital, volatility_target)
+    print("position_sizing_df complete")
+    print(position_sizing_df.tail())
 
-trading_capital = 10000 #TODO 
-volatility_target = 0.50
+    #Subsystem Portfolio
+    subsystem_portfolio_df = subsystem_portfolio.get_subsystem_portfolio(tickers, instrument_weights, position_sizing_df, 
+                                                                        correlation_file = None)
+    print("subsytem_portfolio_df complete")
+    print(subsystem_portfolio_df.tail())
+    
 
-instrument_weights = np.full(len(tickers), 1 / len(tickers))
+    final_display_df = pd.DataFrame({
+        "Combined Forecast": combined_forecasts_df.iloc[-1],
+        "Position Sizing": position_sizing_df.iloc[-1],
+        "Subsystem Portfolio": subsystem_portfolio_df.iloc[-1]
+    })
+    last_close_dict = {}
 
-#Combined Forecast
-combined_forecasts_df = combined_forecast.get_combined_forecasts(tickers, forecasts, forecast_weights)
-print(combined_forecasts_df.tail())
+    for ticker in tickers:
+        last_close_series = ohlc_data.load_ohlc_data_to_df(ticker, startDate=combined_forecasts_df.index[-1], selectCols=["close"]).squeeze("columns")
+        if not last_close_series.empty:
+            last_close_dict[ticker] = last_close_series.iloc[0]
 
-#Volatility Targeting
+    notional_series = pd.Series({
+        ticker: final_display_df.loc[ticker, "Subsystem Portfolio"] * last_close_dict[ticker]
+        for ticker in final_display_df.index if ticker in last_close_dict
+    })
 
-#Position Sizing
-position_sizing_df = position_sizing.get_position_sizing(tickers, combined_forecasts_df, trading_capital, volatility_target)
-print(position_sizing_df.tail())
+    final_display_df["Notional"] = notional_series
 
-#Subsystem Portfolio
-subsystem_portfolio_df = subsystem_portfolio.get_subsystem_portfolio(tickers, instrument_weights, position_sizing_df, 
-                                                                     correlation_file = "correlation_matrix.csv")
-print(subsystem_portfolio_df.tail())
+    with pd.option_context('display.float_format', '{:,.4f}'.format):
+        print(final_display_df)
 
-final_display_df = pd.DataFrame({
-    "Combined Forecast": combined_forecasts_df.iloc[-1],
-    "Position Sizing": position_sizing_df.iloc[-1],
-    "Subsystem Portfolio": subsystem_portfolio_df.iloc[-1]
-})
-last_close_dict = {}
+    return subsystem_portfolio_df
 
-for ticker in tickers:
-    last_close_series = ohlc_data.load_ohlc_data_to_df(ticker, startDate=combined_forecasts_df.index[-1])["close"]
-    if not last_close_series.empty:
-        last_close_dict[ticker] = last_close_series.iloc[0]
+if __name__ == "__main__":
+    tickers = ['BTC/USD', 'ADA/USD', 'BCH/USD', 'XTZ/USD', 'ATOM/USD', 'LTC/USD', 'XMR/USD', 'DOGE/USD', 'LINK/USD', 'XRP/USD', 'ETH/USD']
+    #tickers = ["BTC/USD", "ETH/USD"]
+    forecasts = [forecast.EWMACSignal(L_fast=16, L_slow=64, forecast_scalar=3.75), 
+                forecast.EWMACSignal(L_fast=32, L_slow=128, forecast_scalar=2.65)]
+    forecast_weights = np.array([0.6, 0.4])
+    trading_capital = 100000
+    volatility_target = 0.50
+    instrument_weights = np.full(len(tickers), 1 / len(tickers))
 
-notional_series = pd.Series({
-    ticker: final_display_df.loc[ticker, "Subsystem Portfolio"] * last_close_dict[ticker]
-    for ticker in final_display_df.index if ticker in last_close_dict
-})
+    df = run_trading_system(tickers, forecasts, forecast_weights, trading_capital, volatility_target, instrument_weights)
 
-final_display_df["Notional"] = notional_series
-
-with pd.option_context('display.float_format', '{:,.4f}'.format):
-    print(final_display_df)
 
 '''
 overwriteExisting = True
@@ -91,3 +98,4 @@ else:
     ewmac_cs_df.to_excel("ewmac_signals2.xlsx")
 
 '''
+# %%

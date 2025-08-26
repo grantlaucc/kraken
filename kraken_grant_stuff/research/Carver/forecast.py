@@ -33,8 +33,8 @@ class EWMACSignal:
         return signal
 
     def load_price_series(self, ticker, columnName):
-        df = ohlc_data.load_ohlc_data_to_df(ticker, startDate=self.start_date, endDate=self.end_date)
-        return df[columnName]
+        df = ohlc_data.load_ohlc_data_to_df(ticker, startDate=self.start_date, endDate=self.end_date, selectCols=[columnName])
+        return df
     
     def get_signal(self, price_series):
         fast_ewma = price_series.ewm(span=self.L_fast).mean()
