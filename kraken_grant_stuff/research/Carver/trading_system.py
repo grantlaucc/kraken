@@ -11,9 +11,11 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import ohlc_data
 from datetime import datetime, timezone, timedelta
+from file_helper import write_incremental_csv
 
 
-def run_trading_system(tickers, forecasts, forecast_weights, trading_capital, volatility_target, instrument_weights):
+
+def run_trading_system(tickers, forecasts, forecast_weights, trading_capital, volatility_target, instrument_weights, correlation_file=None, save_dir=False):
     #Combined Forecast
     combined_forecasts_df = combined_forecast.get_combined_forecasts(tickers, forecasts, forecast_weights)
     print("combined_forecasts_df complete")
@@ -28,7 +30,7 @@ def run_trading_system(tickers, forecasts, forecast_weights, trading_capital, vo
 
     #Subsystem Portfolio
     subsystem_portfolio_df = subsystem_portfolio.get_subsystem_portfolio(tickers, instrument_weights, position_sizing_df, 
-                                                                        correlation_file = None)
+                                                                        correlation_file = correlation_file)
     print("subsytem_portfolio_df complete")
     print(subsystem_portfolio_df.tail())
     
@@ -55,13 +57,25 @@ def run_trading_system(tickers, forecasts, forecast_weights, trading_capital, vo
     with pd.option_context('display.float_format', '{:,.4f}'.format):
         print(final_display_df)
 
+    if save_dir:
+        # These frames look like your example (timestamp index, asset columns)
+        info1 = write_incremental_csv(combined_forecasts_df, save_dir, "combined_forecasts.csv")
+        info2 = write_incremental_csv(position_sizing_df, save_dir, "position_sizing.csv")
+        info3 = write_incremental_csv(subsystem_portfolio_df, save_dir, "subsystem_portfolio.csv")
+        print("[Data export]")
+        print(f"  combined_forecasts -> {info1}")
+        print(f"  position_sizing    -> {info2}")
+        print(f"  subsystem_portfolio-> {info3}")
+
     return subsystem_portfolio_df
 
 if __name__ == "__main__":
-    tickers = ['BTC/USD', 'ADA/USD', 'BCH/USD', 'XTZ/USD', 'ATOM/USD', 'LTC/USD', 'XMR/USD', 'DOGE/USD', 'LINK/USD', 'XRP/USD', 'ETH/USD']
-    #tickers = ["BTC/USD", "ETH/USD"]
-    forecasts = [forecast.EWMACSignal(L_fast=16, L_slow=64, forecast_scalar=3.75), 
-                forecast.EWMACSignal(L_fast=32, L_slow=128, forecast_scalar=2.65)]
+    end_ts = pd.Timestamp.now(tz="UTC").normalize()           # e.g., 2025-09-02 00:00:00+00:00
+    start_ts = end_ts - pd.DateOffset(years=2)
+    #tickers = ['BTC/USD', 'ADA/USD', 'BCH/USD', 'XTZ/USD', 'ATOM/USD', 'LTC/USD', 'XMR/USD', 'DOGE/USD', 'LINK/USD', 'XRP/USD', 'ETH/USD']
+    tickers = ["BTC/USD", "ETH/USD"]
+    forecasts = [forecast.EWMACSignal(L_fast=16, L_slow=64, forecast_scalar=3.75, start_date=start_ts), 
+                forecast.EWMACSignal(L_fast=32, L_slow=128, forecast_scalar=2.65, start_date=start_ts)]
     forecast_weights = np.array([0.6, 0.4])
     trading_capital = 100000
     volatility_target = 0.50
@@ -70,32 +84,3 @@ if __name__ == "__main__":
     df = run_trading_system(tickers, forecasts, forecast_weights, trading_capital, volatility_target, instrument_weights)
 
 
-'''
-overwriteExisting = True
-
-startDate = (datetime.now(timezone.utc) - timedelta(days=300)).replace(hour=0, minute=0, second=0, microsecond=0)
-ewmac_cs_df = ewmac_cross_sectional(usdc_pairs, startDate=None)
-if overwriteExisting:
-    existing_df = pd.read_excel("ewmac_signals.xlsx", index_col=0, parse_dates=True)
-    last_timestamp = existing_df.index.max()
-    #Ensure last_timestamp is tz-aware (UTC)
-    if last_timestamp.tzinfo is None:
-        last_timestamp = last_timestamp.tz_localize("UTC")
-    print(f"Last saved timestamp: {last_timestamp}")
-    new_rows = ewmac_cs_df[ewmac_cs_df.index > last_timestamp]
-
-    if new_rows.empty:
-        print("No new rows to append.")
-    else:
-        print(f"Appending {len(new_rows)} new row(s).")
-        updated_df = pd.concat([existing_df, new_rows])
-        updated_df = updated_df[~updated_df.index.duplicated(keep='last')]
-        updated_df.index = pd.to_datetime(updated_df.index, utc=True).tz_convert(None)# remove tz for Excel
-        updated_df.to_excel("ewmac_signals.xlsx")
-
-else:
-    ewmac_cs_df.index = ewmac_cs_df.index.tz_convert(None) #remove timezones for safe excel writing
-    ewmac_cs_df.to_excel("ewmac_signals2.xlsx")
-
-'''
-# %%
