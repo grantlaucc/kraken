@@ -4,6 +4,7 @@ import urllib.parse as par
 from questdb.ingress import Sender
 import pandas as pd
 import io
+from typing import Iterable, Union, List
 
 
 def get_ohlc_data(pair="BTC/USD", interval=1440, since = None):
@@ -190,6 +191,56 @@ def load_ohlc_data_to_df(ticker, interval=1440, questdb_url="http://localhost:90
     df = df.set_index('timestamp')
     return df
 
+def read_csv_data(
+    tickers: Union[str, Iterable[str]],
+    csv_path: str = "/Users/grantlau/Documents/QuantStuff/kraken/kraken_grant_stuff/research/all_closes.csv",
+    startDate: str | pd.Timestamp | None = None,
+    endDate: str | pd.Timestamp | None = None,
+) -> pd.DataFrame:
+    """
+    Load a wide CSV of close prices and return a DataFrame of closes for the requested tickers,
+    filtered to [startDate, endDate] (inclusive). The CSV must have a 'timestamp' column
+    and one column per ticker (values = close prices).
+
+    Parameters
+    ----------
+    csv_path : path to CSV
+    tickers  : a ticker symbol or an iterable of symbols (must match CSV column names)
+    startDate, endDate : optional date/datetime strings or pd.Timestamp; interpreted in UTC
+
+    Returns
+    -------
+    pd.DataFrame indexed by UTC timestamps with columns = requested tickers (float).
+    """
+    # Normalize tickers to a list
+    if isinstance(tickers, str):
+        tickers = [tickers]
+    else:
+        tickers = list(tickers)
+
+    # Load and set index
+    df = pd.read_csv(csv_path, parse_dates=["timestamp"])
+    if "timestamp" not in df.columns:
+        raise ValueError("CSV must have a 'timestamp' column.")
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
+    df = df.set_index("timestamp").sort_index()
+
+    # Date filters (inclusive)
+    if startDate is not None:
+        df = df[df.index >= pd.to_datetime(startDate, utc=True)]
+    if endDate is not None:
+        df = df[df.index <= pd.to_datetime(endDate, utc=True)]
+
+    # Validate tickers exist
+    missing: List[str] = [t for t in tickers if t not in df.columns]
+    if missing:
+        raise KeyError(f"Ticker(s) not found in CSV: {missing}")
+
+    # Select and coerce to float
+    out = df[tickers].apply(pd.to_numeric, errors="coerce")
+
+    return out
+
 def download_ohlc_data(interval, tickers, startTimestamp, new_only=True):
     for ticker in tickers:
         ohlc = get_ohlc_data(ticker, interval, since=startTimestamp)
@@ -375,8 +426,11 @@ if __name__ == "__main__":
     #download_ohlc_data(interval=interval, tickers=usdc_pairs,startTimestamp=startTimestamp, new_only=True)
     #print(load_ohlc_data_to_df("BTC/USD"))
     #export_closes_to_csv_2(tickers=usdc_pairs)
-    ticker = "USD/CAD"
-    ohlc = get_ohlc_data(ticker, interval, since=startTimestamp)
-    ohlcDF = ohlc_to_df(ohlc)
-    print(ohlcDF)
+    ticker = ["BTC/USD", "ETH/USD"]
+    startDate = pd.Timestamp.now(tz="UTC").normalize()
+    df = read_csv_data(ticker, startDate = startDate)
+    print(df)
+    #ohlc = get_ohlc_data(ticker, interval, since=startTimestamp)
+    #ohlcDF = ohlc_to_df(ohlc)
+    #print(ohlcDF)
 

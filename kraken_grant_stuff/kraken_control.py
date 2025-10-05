@@ -154,8 +154,8 @@ def main():
     #websocket.enableTrace(True)
     global ws
     signal.signal(signal.SIGINT, signal_handler)
-    ws_thread_l2 = threading.Thread(target=kraken_l2.start_websocket, daemon=True)
-    ws_thread_l2.start()
+    #ws_thread_l2 = threading.Thread(target=kraken_l2.start_websocket, daemon=True)
+    #ws_thread_l2.start()
 
 
     ws = websocket.WebSocketApp(ws_url,

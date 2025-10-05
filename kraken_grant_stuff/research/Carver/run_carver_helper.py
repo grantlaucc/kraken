@@ -41,7 +41,25 @@ def load_notional_scale_series(path: str,
 
     return scale
 
-def updateYesterdayNotional(live_positions_filepath: str, tickers: list[str]) -> float:
+
+def load_live_position_notional_scale_series(path, base_capital, align_index):
+    df = pd.read_csv(path, index_col=0, parse_dates=True)
+
+    # Make both sides tz-naive daily for the join
+    idx_csv = (df.index.tz_localize(None) if df.index.tz is not None else df.index).normalize()
+    ai = pd.DatetimeIndex(align_index)
+    ai_join = (ai.tz_localize(None) if ai.tz is not None else ai).normalize()
+
+    notional = pd.to_numeric(df["Notional"], errors="coerce")
+    notional_aligned = notional.set_axis(idx_csv).reindex(ai_join).ffill().bfill()
+
+    scale = (notional_aligned / float(base_capital)).astype(float)
+
+    # Preserve the original align_index (including time/tz)
+    scale.index = ai
+    return scale
+
+def updateYesterdayNotional(live_positions_filepath: str, tickers: list[str], date_override=None) -> float:
     """
     Compute today's Notional based on *yesterday's* recorded positions and *today's* prices,
     then upsert it into today's row (column 'Notional') of live_positions.csv.
@@ -59,7 +77,10 @@ def updateYesterdayNotional(live_positions_filepath: str, tickers: list[str]) ->
     if df.empty:
         raise ValueError(f"{live_positions_filepath} is empty")
 
-    today = pd.Timestamp.now(tz="UTC").normalize().tz_convert(None)
+    today = (
+    pd.to_datetime(date_override, utc=True).normalize().tz_convert(None)
+    if date_override is not None
+    else pd.Timestamp.now(tz="UTC").normalize().tz_convert(None))
     yday = today - pd.Timedelta(days=1)
 
     if yday not in df.index:
@@ -74,11 +95,11 @@ def updateYesterdayNotional(live_positions_filepath: str, tickers: list[str]) ->
     for t in tickers:
         base = base_from_symbol(t)
         units = float(pos_yday.get(base, 0.0))
-        if units == 0.0:
+        if (units == 0.0 or units != units):
             continue
 
         try:
-            px_df = ohlc_data.load_ohlc_data_to_df(t, selectCols=["close"], startDate=startDate)
+            px_df = ohlc_data.load_ohlc_data_to_df(t, selectCols=["close"], startDate=startDate, endDate=today)
             price = float(px_df["close"].dropna().iloc[-1])
             notional += units * price
         except Exception as e:
@@ -102,3 +123,8 @@ def updateYesterdayNotional(live_positions_filepath: str, tickers: list[str]) ->
 
     df.to_csv(live_positions_filepath)
     return notional
+
+myTickers=['LTC/USD', 'LINK/USD', 'BCH/USD', 'ADA/USD', 'ETH/USD', 'XTZ/USD', 'ATOM/USD', 'XRP/USD', 'BTC/USD', 'DOGE/USD']
+updateYesterdayNotional("/Users/grantlau/Documents/QuantStuff/kraken/kraken_grant_stuff/research/Carver/strategies/EWMAC_8_32_LO_TEST_V5/live_positions.csv",
+                        myTickers,
+                        date_override = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=2))

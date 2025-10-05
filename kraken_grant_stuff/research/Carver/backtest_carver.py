@@ -8,13 +8,14 @@ import trading_system
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import ohlc_data
 import matplotlib.pyplot as plt
-#import quantstats_lumi as qs
+import quantstats_lumi as qs
 import yfinance as yf
 import pair_selection
 
 STRATEGY_NAME = "EWMAC_8_32_LO_TEST_V2"
 
 tickers = pair_selection.pairs_with_data_before("2020-01-01")
+tickers = ['LTC/USD', 'LINK/USD', 'BCH/USD', 'ADA/USD', 'ETH/USD', 'XTZ/USD', 'ATOM/USD', 'XRP/USD', 'BTC/USD', 'DOGE/USD']
 print("Running Backtest for: ", tickers)
 quoteCurrency = "USD"
 forecasts = [forecast.EWMACSignal(L_fast=8, L_slow=32, forecast_scalar=5.3)]
@@ -222,7 +223,7 @@ qs.reports.html(returns, output=STRATEGY_NAME+'.html')
 
 
 # %%
-backtest_df.to_csv("backtest_df.csv")
-notional_df.to_csv("notional_df.csv")
-subsystem_portfolio_df.to_csv("subsystem_portfolio_df.csv")
+#backtest_df.to_csv("backtest_df.csv")
+#notional_df.to_csv("notional_df.csv")
+#subsystem_portfolio_df.to_csv("subsystem_portfolio_df.csv")
 # %%

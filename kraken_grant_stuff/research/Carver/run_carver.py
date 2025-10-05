@@ -11,9 +11,9 @@ import run_carver_helper
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import ohlc_data
 
-STRATEGY_NAME = "EWMAC_8_32_LO_TEST_V4"
+STRATEGY_NAME = "EWMAC_8_32_LO_TEST_V5"
 
-tickers = ['LTC/USD', 'LINK/USD', 'BCH/USD', 'ADA/USD', 'ETH/USD', 'XTZ/USD', 'ATOM/USD', 'XMR/USD', 'XRP/USD', 'BTC/USD', 'DOGE/USD']
+tickers = ['LTC/USD', 'LINK/USD', 'BCH/USD', 'ADA/USD', 'ETH/USD', 'XTZ/USD', 'ATOM/USD', 'XRP/USD', 'BTC/USD', 'DOGE/USD']
 quoteCurrency = "USD"
 
 end_ts = pd.Timestamp.now(tz="UTC").normalize()           # e.g., 2025-09-02 00:00:00+00:00
@@ -22,7 +22,8 @@ start_ts = end_ts - pd.DateOffset(years=2)
 forecasts = [forecast.EWMACSignal(L_fast=8, L_slow=32, forecast_scalar=5.3, start_date=start_ts)]
 forecast_weights = np.array([1])
 
-trading_capital = 2500 #TODO 
+trading_capital = 2500 #TODO
+LIVE_POSITION_NOTIONAL = True 
 volatility_target = 0.50
 correlation_file = "/Users/grantlau/Documents/QuantStuff/kraken/kraken_grant_stuff/research/Carver/correlations_2023_2025.csv"
 strategy_folder = os.path.join("strategies", STRATEGY_NAME)
@@ -42,6 +43,9 @@ def run_carver(skip_update: bool, notional_file: str | None = None):
         ohlc_data.download_ohlc_data(interval=interval, tickers=usdc_pairs,startTimestamp=startTimestamp, new_only=True)
 
     #TODO get trading capital based on today's prices and yesterday's real positions
+    live_positions_filepath = os.path.join(strategy_folder, "live_positions.csv")
+    todayNotional = run_carver_helper.updateYesterdayNotional(live_positions_filepath, tickers)
+    print("TODAY NOTIONAL", todayNotional)
 
     ###Run 
     subsystem_portfolio_df = trading_system.run_trading_system(tickers, forecasts, forecast_weights, trading_capital, 
@@ -57,6 +61,14 @@ def run_carver(skip_update: bool, notional_file: str | None = None):
         )
         # Multiply each day's target units by that day's (previous EOD) scale
         subsystem_portfolio_df = subsystem_portfolio_df.mul(scale_series, axis=0)
+    
+    elif LIVE_POSITION_NOTIONAL:
+        scale_series = run_carver_helper.load_live_position_notional_scale_series(path=live_positions_filepath, 
+                                                                                  base_capital=trading_capital,
+                                                                                  align_index=subsystem_portfolio_df.index)
+        subsystem_portfolio_df = subsystem_portfolio_df.mul(scale_series, axis=0)
+
+    #TODO elif no notional file scale using live positions. Back fill notional series for dates subsystem_porfolio_df index dates
 
     if LONG_ONLY:
         subsystem_portfolio_df = subsystem_portfolio_df.clip(lower=0.0)
