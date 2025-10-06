@@ -1,6 +1,6 @@
 import json
 
-def order(ws, order_type, side, qty, limit_price, symbol, token, validate = True):
+def order(ws, order_type, side, qty, limit_price, symbol, token, validate = True, req_id=None):
     """
     Send a market order to Kraken WebSocket API with validation.
     
@@ -20,7 +20,7 @@ def order(ws, order_type, side, qty, limit_price, symbol, token, validate = True
             "token": token,
             "validate": validate  # Ensures the order is only validated, not executed
         },
-        "req_id": 1,  # Optional: Unique ID provided by the client
+        "req_id": req_id,  # Optional: Unique ID provided by the client
     }
 
     if order_type == "limit":

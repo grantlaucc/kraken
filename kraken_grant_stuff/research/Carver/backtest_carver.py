@@ -15,7 +15,7 @@ import pair_selection
 STRATEGY_NAME = "EWMAC_8_32_LO_TEST_V2"
 
 tickers = pair_selection.pairs_with_data_before("2020-01-01")
-tickers = ['LTC/USD', 'LINK/USD', 'BCH/USD', 'ADA/USD', 'ETH/USD', 'XTZ/USD', 'ATOM/USD', 'XRP/USD', 'BTC/USD', 'DOGE/USD']
+tickers = ['LTC/USD', 'LINK/USD', 'BCH/USD', 'ADA/USD', 'ETH/USD', 'XTZ/USD', 'ATOM/USD', 'XRP/USD', 'BTC/USD', 'DOGE/USD', 'SOL/USD']
 print("Running Backtest for: ", tickers)
 quoteCurrency = "USD"
 forecasts = [forecast.EWMACSignal(L_fast=8, L_slow=32, forecast_scalar=5.3)]
@@ -24,6 +24,7 @@ forecast_weights = np.array([1])
 trading_capital = 2500 #TODO 
 volatility_target = 0.50
 fee_rate = 0.006 #Kraken trading fees
+slippage = 0.002
 TRADE_INERTIA = 0.10    # only trade if |target - current| > 10% of |current|
 LONG_ONLY = True
 ORDER_MIN = True
@@ -48,6 +49,7 @@ def enforce_cash_constraint(trades_units: pd.Series,
                             prices: pd.Series,
                             cash0: float,
                             fee_rate: float,
+                            slippage: float = 0.0,
                             min_cash: float = 0.0) -> tuple[pd.Series, float]:
     """
     Ensures end-of-trade cash >= min_cash by scaling BUY legs only.
@@ -61,8 +63,8 @@ def enforce_cash_constraint(trades_units: pd.Series,
     sells = trades_units.clip(upper=0.0)
 
     # Dollar notionals (all nonnegative)
-    buy_notional  = float((buys  * prices).sum())        # == cost_buys
-    sell_notional = float((-sells * prices).sum())       # == cash_from_sells
+    buy_notional  = float((buys  * prices * (1.0 + slippage)).sum())        # == cost_buys
+    sell_notional = float((-sells * prices * (1.0 - slippage)).sum())       # == cash_from_sells
 
     # No buys -> cash only improves or stays; nothing to scale
     if buy_notional <= 1e-15:
@@ -162,6 +164,7 @@ for date in common_index:
             prices=prices,
             cash0=positions[quoteCurrency],
             fee_rate=fee_rate,
+            slippage=slippage,
             min_cash=MIN_CASH_BUFFER
         )
         if alpha_used < 1.0:
@@ -172,10 +175,19 @@ for date in common_index:
 
     # Calculate trades and trade cost
     #trades_units = target_units - pd.Series({ticker: positions[ticker] for ticker in target_units.index})
-    trade_cost = (trades_units * prices).sum()
+# Executed at slipped prices:
+# - Buys pay higher (1+slip); sells receive lower (1-slip)
+    buys  = trades_units.clip(lower=0.0)
+    sells = trades_units.clip(upper=0.0)
 
-    notional_traded = (trades_units.abs() * prices).sum()
-    trading_fee = fee_rate * notional_traded
+    buy_exec_notional  = float((buys  * prices * (1.0 + slippage)).sum())
+    sell_exec_notional = float((-sells * prices * (1.0 - slippage)).sum())
+
+    # Net cash impact of trades before fees (positive = cash outflow)
+    trade_cost  = buy_exec_notional - sell_exec_notional
+
+    # Fees on executed notional (both sides)
+    trading_fee = fee_rate * (buy_exec_notional + sell_exec_notional)
 
     # Update cash
     positions[quoteCurrency] -= trade_cost

@@ -60,19 +60,5 @@ class EWMACSignal:
     plt.show() #blocking
     '''
 
-def ewmac_cross_sectional(tickers, startDate=None):
-    ewmac_dict = {}
-
-    for ticker in tickers:
-        try:
-            ewmac_series = ewmac(ticker, startDate = startDate)
-            ewmac_series.name = ticker  # set column name
-            ewmac_dict[ticker] = ewmac_series
-        except Exception as e:
-            print(f"Failed to process {ticker}: {e}")
-
-    ewmac_df = pd.DataFrame(ewmac_dict)
-    return ewmac_df
-
 
 
