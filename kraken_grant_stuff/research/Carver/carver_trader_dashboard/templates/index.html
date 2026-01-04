@@ -1,0 +1,140 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Trader Dashboard — {{ strategy_name }}</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
+    h1 { margin-bottom: 0; }
+    small { color: #666; }
+    form, table { margin-top: 16px; }
+    input, select { padding: 6px 8px; font-size: 14px; }
+    button { padding: 8px 12px; font-size: 14px; cursor: pointer; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border-bottom: 1px solid #eee; padding: 8px; text-align: left; }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .card { border: 1px solid #eee; padding: 16px; border-radius: 8px; }
+    .right { text-align: right; }
+    .muted { color: #888; }
+    .ok { color: #0a7; }
+    .warn { color: #a70; }
+    .err { color: #c33; }
+  </style>
+</head>
+<body>
+  <h1>Trader Dashboard</h1>
+  <small>Strategy: <b>{{ strategy_name }}</b> &nbsp;•&nbsp; Dir: <code>{{ strategy_dir }}</code></small>
+
+  <div class="card">
+    <h3 style="margin-top:0">Submit Order</h3>
+    <form method="post" action="{{ url_for('dashboard.submit_order') }}">
+      <div class="row">
+        {% if bases %}
+          <label>Base
+            <select name="base">
+              {% for b in bases %}
+                <option value="{{ b }}">{{ b }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        {% else %}
+          <label>Base <input name="base" placeholder="e.g., BTC" required></label>
+        {% endif %}
+
+        <label>Quote
+          <select name="quote">
+            {% for q in quotes %}
+              <option value="{{ q }}">{{ q }}</option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label>Side
+          <select name="side">
+            <option value="BUY">BUY</option>
+            <option value="SELL">SELL</option>
+          </select>
+        </label>
+
+        <label>Type
+          <select name="order_type">
+            <option value="market">market</option>
+            <option value="limit">limit</option>
+          </select>
+        </label>
+
+        <label>Limit Px
+          <input name="limit_price" type="number" step="any" placeholder="only for limit">
+        </label>
+
+        <label title="If checked, Kraken will only validate the order without executing it.">
+          <input type="checkbox" name="validate" value="true" checked> Validate
+        </label>
+
+        <label>Quantity <input name="qty" type="number" step="any" min="0" placeholder="e.g., 0.05" required></label>
+        <button type="submit">Submit</button>
+      </div>
+      {% if not ws_ready %}
+        <p class="warn">WebSocket not fully ready yet (connecting/token)… You can submit, but it may fail until connected.</p>
+      {% endif %}
+    </form>
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <p class="ok">{{ messages[-1] }}</p>
+      {% endif %}
+    {% endwith %}
+    <p class="muted">Orders are also logged to <code>orders_submitted.csv</code> in your strategy folder.</p>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3 style="margin-top:0">Recent Orders</h3>
+    {% if has_orders %}
+      <table>
+        <thead>
+          <tr>
+            <th>Time (UTC)</th>
+            <th>Asset</th>
+            <th>Side</th>
+            <th>Type</th>
+            <th class="right">Qty</th>
+            <th class="right">Limit</th>
+            <th>Status</th>
+            <th>Actions</th> <!-- NEW -->
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in orders %}
+            {% set oid = r.get('order_id') %}
+            {% set st = (r.get('status') or '') %}
+            {% set can_cancel = oid and st in ['pending','submitted','accepted','cancel_requested'] %}
+            <tr>
+              <td>{{ r['timestamp'] }}</td>
+              <td>{{ r['asset'] }}</td>
+              <td>{{ r['side'] }}</td>
+              <td>{{ r.get('order_type','') }}</td>
+              <td class="right">{{ "{:.8g}".format(r['qty']) }}</td>
+              <td class="right">{{ r.get('limit_price','') }}</td>
+              <td>{{ st }}</td>
+              <td>
+                {% if can_cancel %}
+                  <form method="post" action="{{ url_for('dashboard.cancel') }}" style="display:inline">
+                    <input type="hidden" name="order_id" value="{{ oid }}">
+                    <button type="submit" {% if not ws_ready %}disabled title="WS not ready"{% endif %}>
+                      {% if st == 'cancel_requested' %}Canceling…{% else %}Cancel{% endif %}
+                    </button>
+                  </form>
+                {% else %}
+                  <span class="muted">—</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">No orders yet.</p>
+    {% endif %}
+  </div>
+</body>
+</html>
+"""
