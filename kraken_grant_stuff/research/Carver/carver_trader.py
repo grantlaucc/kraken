@@ -6,13 +6,10 @@ import os
 import argparse
 import websocket
 import threading
-import carver_trader_helper as helper
+import research.Carver.carver_trader_helper_old as helper
 import threading
 import webbrowser
-from carver_trader_dashboard import create_app
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-
+from research.Carver.carver_trader_dashboard.app import create_app
 import kraken_token  # must provide get_websocket_token()
 from kraken_balances import KrakenBalances
 import research.ohlc_data as ohlc_data
@@ -47,7 +44,10 @@ def start_dashboard_thread(strategy_name: str, port: int = 5055, no_open: bool =
     t.start()
 
     if not no_open:
-        webbrowser.open(f"http://127.0.0.1:{port}/", new=2)
+        try:
+            webbrowser.open(f"http://127.0.0.1:{port}/", new=2)
+        except Exception:
+            pass
 
     return t
 

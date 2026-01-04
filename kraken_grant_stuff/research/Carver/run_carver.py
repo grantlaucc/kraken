@@ -4,12 +4,13 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timezone
 import argparse
-import forecast
-import trading_system
+import research.Carver.trading_system.forecast as forecast
+import research.Carver.trading_system.trading_system as trading_system
 from file_helper import write_incremental_csv
 import run_carver_helper
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-import ohlc_data
+import research.ohlc_data as ohlc_data
+sys.path.append("/Users/grantlau/Documents/QuantStuff/CryptoFunding")
+import bitmex_funding_data
 
 STRATEGY_NAME = "EWMAC_8_32_LO_TEST_V5"
 
@@ -33,14 +34,20 @@ ORDER_MIN = True
 
 instrument_weights = np.full(len(tickers), 1 / len(tickers))
 
-def run_carver(skip_update: bool, notional_file: str | None = None):
+def run_carver(skip_update: bool, notional_file: str | None = None, run_early: bool = False):
     ###Update Data
     if not skip_update:
         interval = 1440
         startTimestamp = int(datetime(2023, 1, 1, 0, 0, 0, tzinfo=timezone.utc).timestamp())
         with open("/Users/grantlau/Documents/QuantStuff/kraken/kraken_grant_stuff/research/usd_pairs.txt", "r") as file:
             usdc_pairs = [line.strip() for line in file]
-        ohlc_data.download_ohlc_data(interval=interval, tickers=usdc_pairs,startTimestamp=startTimestamp, new_only=True)
+        if run_early:
+            ohlc_data.download_run_early_data(interval=interval, tickers=usdc_pairs, startTimestamp=startTimestamp, column='close')
+        else:
+            ohlc_data.download_ohlc_data(interval=interval, tickers=usdc_pairs,startTimestamp=startTimestamp, new_only=True, column='open')
+        #Download Bitmex funding data
+        bitmex_tickers = [bitmex_funding_data.convert_symbol(t) for t in usdc_pairs]
+        bitmex_funding_data.download_funding_data(tickers=bitmex_tickers)
 
     #TODO get trading capital based on today's prices and yesterday's real positions
     live_positions_filepath = os.path.join(strategy_folder, "live_positions.csv")
@@ -115,5 +122,10 @@ if __name__ == "__main__":
         default=None,
         help="Path to CSV with time series of notionals/equity (first column = datetime)."
     )
+    parser.add_argument(
+        "--run-early",
+        action="store_true",
+        help="Run Carver early before typical execution time."
+    )
     args = parser.parse_args()
-    run_carver(args.skip_update, args.notional_file)
+    run_carver(args.skip_update, args.notional_file, args.run_early)

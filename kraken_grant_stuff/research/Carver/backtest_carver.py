@@ -1,31 +1,31 @@
 #%%
-import sys
-import os
 import numpy as np
 import pandas as pd
-import forecast
-import trading_system
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-import ohlc_data
+import research.Carver.trading_system.forecast as forecast
+import research.Carver.trading_system.trading_system as trading_system
+import research.ohlc_data as ohlc_data
 import matplotlib.pyplot as plt
 import quantstats_lumi as qs
 import yfinance as yf
 import pair_selection
 
-STRATEGY_NAME = "EWMAC_8_32_LO_TEST_V2"
+STRATEGY_NAME = "EWMAC_8_32_LO_TEST_V4"
 
 tickers = pair_selection.pairs_with_data_before("2020-01-01")
-tickers = ['LTC/USD', 'LINK/USD', 'BCH/USD', 'ADA/USD', 'ETH/USD', 'XTZ/USD', 'ATOM/USD', 'XRP/USD', 'BTC/USD', 'DOGE/USD', 'SOL/USD']
+tickers = ['LTC/USD', 'LINK/USD', 'BCH/USD', 'ADA/USD', 'ETH/USD', 'XTZ/USD', 'ATOM/USD', 'XRP/USD', 'BTC/USD', 'DOGE/USD']
+
+#tickers = ['LTC/USD', 'BCH/USD', 'ADA/USD', 'ETH/USD', 'XRP/USD', 'BTC/USD', 'DOGE/USD', 'SOL/USD'] #Funding Tickers
 print("Running Backtest for: ", tickers)
 quoteCurrency = "USD"
 forecasts = [forecast.EWMACSignal(L_fast=8, L_slow=32, forecast_scalar=5.3)]
-forecast_weights = np.array([1])
+#forecasts = [forecast.EWMACSignal(L_fast=8, L_slow=32, forecast_scalar=5.3), forecast.CarrySignal()]
+forecast_weights = np.array([1.0])
 
-trading_capital = 2500 #TODO 
+trading_capital = 2500  # TODO
 volatility_target = 0.50
-fee_rate = 0.006 #Kraken trading fees
+fee_rate = 0.004      # Kraken trading fees
 slippage = 0.002
-TRADE_INERTIA = 0.10    # only trade if |target - current| > 10% of |current|
+TRADE_INERTIA = 0.10  # only trade if |target - current| > 10% of |current|
 LONG_ONLY = True
 ORDER_MIN = True
 AVOID_NEGATIVE_CASH = False
@@ -33,7 +33,7 @@ MIN_CASH_BUFFER = 0.0
 
 instrument_weights = np.full(len(tickers), 1 / len(tickers))
 
-##Backetest Helper Functions
+## Backtest Helper Functions
 def log_trades(date, current_units: pd.Series, target_units: pd.Series, trades_units: pd.Series):
     moved = trades_units[trades_units != 0.0]
     if moved.empty:
@@ -52,75 +52,68 @@ def enforce_cash_constraint(trades_units: pd.Series,
                             slippage: float = 0.0,
                             min_cash: float = 0.0) -> tuple[pd.Series, float]:
     """
-    Ensures end-of-trade cash >= min_cash by scaling BUY legs only.
+    Keep end-of-trade cash >= min_cash by scaling BUY legs only.
     Returns (adjusted_trades_units, alpha_used) where alpha in [0,1].
     """
     if trades_units.empty:
         return trades_units, 1.0
 
-    # Split buys/sells
-    buys = trades_units.clip(lower=0.0)
+    buys  = trades_units.clip(lower=0.0)
     sells = trades_units.clip(upper=0.0)
 
-    # Dollar notionals (all nonnegative)
-    buy_notional  = float((buys  * prices * (1.0 + slippage)).sum())        # == cost_buys
-    sell_notional = float((-sells * prices * (1.0 - slippage)).sum())       # == cash_from_sells
+    buy_notional  = float((buys  * prices * (1.0 + slippage)).sum())
+    sell_notional = float((-sells * prices * (1.0 - slippage)).sum())
 
-    # No buys -> cash only improves or stays; nothing to scale
     if buy_notional <= 1e-15:
         return trades_units, 1.0
 
-    # Cash after applying alpha to BUY legs (SELLS unchanged):
-    # cash_after(alpha) = cash0
-    #                   + sell_notional
-    #                   - alpha * buy_notional
-    #                   - fee_rate * (alpha * buy_notional + sell_notional)
-    #                   = cash0 + sell_notional*(1 - fee_rate)
-    #                     - alpha * buy_notional*(1 + fee_rate)
     numer = cash0 + sell_notional * (1.0 - fee_rate) - min_cash
     denom = buy_notional * (1.0 + fee_rate)
 
     if denom <= 1e-15:
-        # Degenerate, but guard anyway
         return sells, 0.0
 
-    # Choose smallest shrink alpha in [0,1] that satisfies cash_after >= min_cash
     alpha = max(0.0, min(1.0, numer / denom))
-
     if alpha >= 0.999999:
         return trades_units, 1.0
 
     adjusted = sells + buys * alpha
     return adjusted, alpha
 
-##End of Backtest Helper Functions
-
-subsystem_portfolio_df = trading_system.run_trading_system(tickers, forecasts, forecast_weights, trading_capital, volatility_target, instrument_weights)
-base_capital = trading_capital  # e.g., 2500 you already passed into run_trading_system
+## Build base targets (open-based)
+subsystem_portfolio_df = trading_system.run_trading_system(
+    tickers, forecasts, forecast_weights, trading_capital, volatility_target, instrument_weights
+)
+base_capital = trading_capital
 subsystem_portfolio_df_base = subsystem_portfolio_df.copy()
 
 steps = None
 if ORDER_MIN:
-    ordermin = pd.read_csv("/Users/grantlau/Documents/QuantStuff/kraken/kraken_grant_stuff/research/kraken_usd_pairs_ordermin.csv")\
-                 .set_index("Ticker")["OrderMin"]
+    ordermin = pd.read_csv(
+        "/Users/grantlau/Documents/QuantStuff/kraken/kraken_grant_stuff/research/kraken_usd_pairs_ordermin.csv"
+    ).set_index("Ticker")["OrderMin"]
     steps = ordermin.reindex(subsystem_portfolio_df_base.columns).dropna()
 
+# --- Build price_df from OPEN prices (as Series) and drop duplicate timestamps  ---  # <<< CHANGED
 price_df = pd.DataFrame()
 for ticker in tickers:
-    price_df[ticker] = ohlc_data.load_ohlc_data_to_df(ticker, selectCols=['close'])
+    df_px = ohlc_data.load_ohlc_data_to_df(ticker, selectCols=['open'])
+    s = df_px['open'].astype(float)
+    price_df = price_df.reindex(price_df.index.union(s.index)).sort_index()
+    price_df[ticker] = s
 price_df = price_df.dropna()
 
-
-# Align price and position data
+# Align price and targets
 common_index = subsystem_portfolio_df_base.index.intersection(price_df.index)
 subsystem_portfolio_df_base = subsystem_portfolio_df_base.loc[common_index]
 price_df = price_df.loc[common_index]
 
-# Initialize positions dictionary
+# Initialize positions (units) and cash
 positions = {ticker: 0.0 for ticker in subsystem_portfolio_df_base.columns}
 positions[quoteCurrency] = trading_capital
 
 portfolio_value_history = []
+equity_pre_history = []   # <<< CHANGED: record equity before trading (T-1 units * T prices)
 cash_history = []
 fees_history = []
 positions_history = []
@@ -129,35 +122,34 @@ notional_history = []
 for date in common_index:
     prices = price_df.loc[date]
 
-    # Scale today's target by yesterday's equity
-    equity_tm1 = portfolio_value_history[-1] if portfolio_value_history else base_capital
-    scale = equity_tm1 / base_capital
+    # --- PRE-TRADE EQUITY at day T: cash_{T-1} + sum(units_{T-1} * price_T) ---  # <<< CHANGED
+    cur_units_series = pd.Series({t: positions.get(t, 0.0) for t in prices.index})
+    equity_pre = positions[quoteCurrency] + float((cur_units_series * prices).sum())
+    equity_pre_history.append(equity_pre)
 
-    # Get base plan for today and scale it
+    # Scale today's target by PRE-TRADE equity (at T prices)                      # <<< CHANGED
+    scale = equity_pre / base_capital
     target_units = subsystem_portfolio_df_base.loc[date] * scale
 
-    # Apply constraints AFTER scaling (recommended)
+    # Constraints AFTER scaling
     if LONG_ONLY:
         target_units = target_units.clip(lower=0.0)
 
     if steps is not None:
         idx = steps.index.intersection(target_units.index)
         target_units.loc[idx] = (
-            target_units.loc[idx]
-            .div(steps[idx]).round().mul(steps[idx])
+            target_units.loc[idx].div(steps[idx]).round().mul(steps[idx])
         )
 
-    # Current units for these tickers
+    # Current units and deltas
     current_units = pd.Series({ticker: positions[ticker] for ticker in target_units.index})
-    # Compute deltas
     delta_units = target_units - current_units
-    # Relative gap vs. current position; if current is 0, treat any nonzero target as 100% away
     denom = current_units.abs().replace(0, 1e-12)
     rel_gap = delta_units.abs() / denom
-    # Only trade where gap > threshold
     trade_mask = rel_gap > TRADE_INERTIA
     trades_units = delta_units.where(trade_mask, 0.0)
 
+    # Optional: guard against negative cash
     if AVOID_NEGATIVE_CASH:
         trades_units, alpha_used = enforce_cash_constraint(
             trades_units=trades_units,
@@ -170,69 +162,63 @@ for date in common_index:
         if alpha_used < 1.0:
             print(f"{date} — cash guard active: scaled BUY legs by alpha={alpha_used:.4f} to respect cash≥{MIN_CASH_BUFFER:.2f}")
 
-    # Optional: log what will actually be traded
-    #log_trades(date, current_units, target_units, trades_units)
-
-    # Calculate trades and trade cost
-    #trades_units = target_units - pd.Series({ticker: positions[ticker] for ticker in target_units.index})
-# Executed at slipped prices:
-# - Buys pay higher (1+slip); sells receive lower (1-slip)
+    # Execute at open ± slippage, compute cash flows and fees
     buys  = trades_units.clip(lower=0.0)
     sells = trades_units.clip(upper=0.0)
 
     buy_exec_notional  = float((buys  * prices * (1.0 + slippage)).sum())
     sell_exec_notional = float((-sells * prices * (1.0 - slippage)).sum())
 
-    # Net cash impact of trades before fees (positive = cash outflow)
     trade_cost  = buy_exec_notional - sell_exec_notional
-
-    # Fees on executed notional (both sides)
     trading_fee = fee_rate * (buy_exec_notional + sell_exec_notional)
 
-    # Update cash
     positions[quoteCurrency] -= trade_cost
     positions[quoteCurrency] -= trading_fee
 
-    # Update positions ONLY for traded tickers
-    for ticker in target_units.index:
-        if trade_mask.loc[ticker]:
-            positions[ticker] = positions[ticker] + trades_units.loc[ticker]
-        # else: leave unchanged
-    
-    notional_row = {t: positions[t] * prices[t] for t in target_units.index}  # asset notionals
-    notional_row[quoteCurrency] = positions[quoteCurrency]                    # cash
+    # Update units only where we traded
+    for tkr in target_units.index:
+        if trade_mask.loc[tkr]:
+            positions[tkr] = positions[tkr] + trades_units.loc[tkr]
+
+    # Mark to market at today's open (post-trade)
+    notional_row = {t: positions[t] * prices[t] for t in target_units.index}
+    notional_row[quoteCurrency] = positions[quoteCurrency]
     notional_row["Portfolio Value"] = sum(notional_row.values())
     notional_history.append(notional_row)
 
-    # Calculate portfolio value
     portfolio_value = notional_row["Portfolio Value"]
     portfolio_value_history.append(portfolio_value)
     cash_history.append(positions[quoteCurrency])
     fees_history.append(trading_fee)
-
-    # Record positions (deep copy so it doesn't mutate)
     positions_history.append(positions.copy())
 
-# Convert portfolio value and cash to DataFrame
+# Histories to DataFrames
 backtest_df = pd.DataFrame({
-    "Portfolio Value": portfolio_value_history,
+    "Equity_PreTrade": equity_pre_history,            # <<< CHANGED: pre-trade equity at T
+    "Portfolio Value": portfolio_value_history,       # post-trade equity at T
     "Cash": cash_history
 }, index=common_index)
 
-# Convert positions history to a DataFrame
 positions_df = pd.DataFrame(positions_history, index=common_index)
+notional_df  = pd.DataFrame(notional_history,  index=common_index)
 
-#build notional_df
-notional_df = pd.DataFrame(notional_history, index=common_index)
+# Clean and standardize index -> tz-naive DatetimeIndex
+backtest_df = backtest_df[~backtest_df.index.duplicated(keep="last")]
+print(backtest_df)
 
+# Force to datetimes in UTC, drop non-parsable
+backtest_df.index = pd.to_datetime(backtest_df.index, utc=True, errors="coerce")
+backtest_df = backtest_df.loc[backtest_df.index.notna()]
+
+# Drop timezone to make QuantStats happy
+backtest_df.index = backtest_df.index.tz_convert(None)
+
+# Build returns
 strategy = backtest_df["Portfolio Value"]
-returns = strategy.pct_change().dropna()
-returns.index = returns.index.tz_convert(None)
+returns = strategy.pct_change()
+returns = returns.replace([np.inf, -np.inf], np.nan).dropna()
 
-# Now safe to call full()
-qs.reports.html(returns, output=STRATEGY_NAME+'.html')
-
-
+qs.reports.html(returns, output=STRATEGY_NAME + '.html')
 
 # %%
 #backtest_df.to_csv("backtest_df.csv")

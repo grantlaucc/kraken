@@ -1,9 +1,7 @@
 import os
-import sys
 import pandas as pd
-from carver_trader_helper import base_from_symbol
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-import ohlc_data
+from research.Carver.carver_trader_helper_old import base_from_symbol
+import research.ohlc_data as ohlc_data
 
 def load_notional_scale_series(path: str,
                                 base_capital: float,
@@ -99,8 +97,8 @@ def updateYesterdayNotional(live_positions_filepath: str, tickers: list[str], da
             continue
 
         try:
-            px_df = ohlc_data.load_ohlc_data_to_df(t, selectCols=["close"], startDate=startDate, endDate=today)
-            price = float(px_df["close"].dropna().iloc[-1])
+            px_df = ohlc_data.load_ohlc_data_to_df(t, selectCols=["open"], startDate=startDate, endDate=today)
+            price = float(px_df["open"].dropna().iloc[-1])
             notional += units * price
         except Exception as e:
             print(f"!! price fetch failed for {t}: {e} (skipping)")

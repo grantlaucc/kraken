@@ -5,6 +5,7 @@ from questdb.ingress import Sender
 import pandas as pd
 import io
 from typing import Iterable, Union, List
+import os
 
 
 def get_ohlc_data(pair="BTC/USD", interval=1440, since = None):
@@ -128,7 +129,7 @@ def insert_ohlc_to_csv(ticker, ohlcDF, column, csvFile):
     return n
 
 def load_ohlc_data_to_df(ticker, interval=1440, questdb_url="http://localhost:9000/exec", startDate=None, endDate=None, selectCols = None,
-                         read_csv = "/Users/grantlau/Documents/QuantStuff/kraken/kraken_grant_stuff/research/all_closes.csv"):
+                         read_csv = "/Users/grantlau/Documents/QuantStuff/kraken/kraken_grant_stuff/research/all_opens.csv"):
     #Direct csv load branch
     if read_csv is not None:
         df_wide = pd.read_csv(read_csv, parse_dates=["timestamp"])
@@ -145,7 +146,7 @@ def load_ohlc_data_to_df(ticker, interval=1440, questdb_url="http://localhost:90
         if ticker not in df_wide.columns:
             raise KeyError(f"Ticker column '{ticker}' not found in CSV")
 
-        out = pd.DataFrame({"close": pd.to_numeric(df_wide[ticker], errors="coerce")})
+        out = pd.DataFrame({"open": pd.to_numeric(df_wide[ticker], errors="coerce")})
         return out
     
     #QuestDB query branch
@@ -163,13 +164,13 @@ def load_ohlc_data_to_df(ticker, interval=1440, questdb_url="http://localhost:90
     where_clause = ""
     if where_clauses:
         where_clause = "WHERE " + " AND ".join(where_clauses)
-    if isinstance(selectCols, list):
-        if "timestamp" not in selectCols:
-            selectCols.append("timestamp")
-            selectColsString = ", ".join(selectCols)
-        query = f"SELECT {selectColsString} FROM {table_name} {where_clause} ORDER BY timestamp"
+    if isinstance(selectCols, list) and selectCols:
+        cols = list(dict.fromkeys(selectCols + ['timestamp']))  # ensure 'timestamp' and dedup
+        select_clause = ", ".join(cols)
     else:
-        query = f"SELECT * FROM {table_name} {where_clause} ORDER BY timestamp"
+        select_clause = "*"
+
+    query = f"SELECT {select_clause} FROM {table_name} {where_clause} ORDER BY timestamp"
 
     response = requests.get(questdb_url, params={"query": query, "format": "json"})
     if response.status_code != 200:
@@ -189,11 +190,12 @@ def load_ohlc_data_to_df(ticker, interval=1440, questdb_url="http://localhost:90
             df['count'] = df['count'].astype(int)
 
     df = df.set_index('timestamp')
+    df = df[~df.index.duplicated(keep='last')]
     return df
 
 def read_csv_data(
     tickers: Union[str, Iterable[str]],
-    csv_path: str = "/Users/grantlau/Documents/QuantStuff/kraken/kraken_grant_stuff/research/all_closes.csv",
+    csv_path: str = "/Users/grantlau/Documents/QuantStuff/kraken/kraken_grant_stuff/research/all_opens.csv",
     startDate: str | pd.Timestamp | None = None,
     endDate: str | pd.Timestamp | None = None,
 ) -> pd.DataFrame:
@@ -241,16 +243,69 @@ def read_csv_data(
 
     return out
 
-def download_ohlc_data(interval, tickers, startTimestamp, new_only=True):
+def download_ohlc_data(interval, tickers, startTimestamp, new_only=True, column = 'open', run_early=False):
     for ticker in tickers:
         ohlc = get_ohlc_data(ticker, interval, since=startTimestamp)
         ohlcDF = ohlc_to_df(ohlc)
         insert_ohlc_to_questdb_ilp(ticker, ohlcDF, interval, new_only=new_only)
-        insert_ohlc_to_csv(ticker, ohlcDF, column = 'close', csvFile = "/Users/grantlau/Documents/QuantStuff/kraken/kraken_grant_stuff/research/all_closes.csv")
+        insert_ohlc_to_csv(ticker, ohlcDF, column = column, csvFile = "/Users/grantlau/Documents/QuantStuff/kraken/kraken_grant_stuff/research/all_opens.csv")
+
+def download_run_early_data(interval, tickers, startTimestamp, column = 'close'):
+    '''
+    Uses latest (today's) close as proxy for tomorrow's open and uploads single row to csv only
+    '''
+    for ticker in tickers:
+        ohlc = get_ohlc_data(ticker, interval, since=startTimestamp)
+        ohlcDF = ohlc_to_df(ohlc)
+        last_row = ohlcDF.iloc[-1].copy()
+        next_midnight = (last_row["timestamp"].normalize() + pd.Timedelta(days=1))
+        last_row["timestamp"] = next_midnight
+        next_day_df = last_row.to_frame().T
+        insert_ohlc_to_csv(ticker, next_day_df, column = column, csvFile = "/Users/grantlau/Documents/QuantStuff/kraken/kraken_grant_stuff/research/all_opens.csv")
+
+def delete_run_early_data(delete_date, strategy_dir, 
+        price_csv="/Users/grantlau/Documents/QuantStuff/kraken/kraken_grant_stuff/research/all_opens.csv"):
+    """
+    Deletes data after using run_early functionality in run_carver.py
+    Best practice to rerun run_carver.py on correct date
+    delete_date: pd.Timestamp("2026-01-05 00:00:00+00:00") - day ahead date
+    strategy_dir: directory containing the strategy CSV files
+    """
+    delete_date = pd.to_datetime(delete_date, utc=True)
+    file_paths = [
+        os.path.join(strategy_dir, "combined_forecasts.csv"),
+        os.path.join(strategy_dir, "position_sizing.csv"),
+        os.path.join(strategy_dir, "subsystem_portfolio.csv"),
+        os.path.join(strategy_dir, "position_file.csv"),
+        price_csv,
+    ]
+
+    for path in file_paths:
+        fname = os.path.basename(path)
+
+        if not os.path.exists(path):
+            print(f"Skipping {fname}: file not found.")
+            continue
+
+        # Load CSV with datetime index
+        df = pd.read_csv(path, index_col=0, parse_dates=True)
+
+        # Ensure timezone-aware UTC
+        df.index = df.index.tz_convert("UTC")
+
+        last_ts = df.index[-1]
+
+        if last_ts == delete_date:
+            # Remove last row
+            df = df.iloc[:-1]
+            df.to_csv(path)
+            print(f"Removed last row from {fname} (timestamp: {last_ts})")
+        else:
+            print(f"No delete done for {fname}: last timestamp is {last_ts}")
 
 def export_closes_to_csv_2(
     tickers,
-    csv_path="all_closes.csv",
+    csv_path="all_opens.csv",
     interval=1440,
     questdb_base="http://localhost:9000",
     chunk_months=3,
@@ -351,7 +406,7 @@ def export_closes_to_csv_2(
             parts = []
             for s_ts, e_ts in _chunk_bounds(start_from, tmax, chunk_months):
                 sql = (
-                    f"SELECT timestamp, close FROM {table} "
+                    f"SELECT timestamp, open FROM {table} "
                     f"WHERE timestamp BETWEEN '{_to_z(s_ts)}' AND '{_to_z(e_ts)}' "
                     f"ORDER BY timestamp"
                 )
@@ -359,7 +414,7 @@ def export_closes_to_csv_2(
                 if df.empty:
                     continue
                 df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
-                ser = pd.to_numeric(df["close"], errors="coerce")
+                ser = pd.to_numeric(df["open"], errors="coerce")
                 ser.index = df["timestamp"]
                 ser = ser[~ser.index.duplicated(keep="last")]
                 parts.append(ser.rename(t))
@@ -417,7 +472,7 @@ def export_closes_to_csv_2(
 if __name__ == "__main__":
     interval = 1440
     with open("/Users/grantlau/Documents/QuantStuff/kraken/kraken_grant_stuff/research/usd_pairs.txt", "r") as file:
-        usdc_pairs = [line.strip() for line in file]
+        usdc_pairs = [line.strip() for line in file][-8:]
     startTimestamp = int(datetime(2023, 1, 1, 0, 0, 0, tzinfo=timezone.utc).timestamp())
 
     #for ticker in usdc_pairs:
@@ -426,10 +481,12 @@ if __name__ == "__main__":
     #download_ohlc_data(interval=interval, tickers=usdc_pairs,startTimestamp=startTimestamp, new_only=True)
     #print(load_ohlc_data_to_df("BTC/USD"))
     #export_closes_to_csv_2(tickers=usdc_pairs)
-    ticker = ["BTC/USD", "ETH/USD"]
-    startDate = pd.Timestamp.now(tz="UTC").normalize()
-    df = read_csv_data(ticker, startDate = startDate)
-    print(df)
+    STRATEGY_DIR = os.path.join("Carver/strategies", "EWMAC_8_32_LO_TEST_V5")
+    delete_run_early_data(pd.Timestamp("2026-01-05 00:00:00+00:00"), STRATEGY_DIR)
+    #ticker = ["BTC/USD", "ETH/USD"]
+    #startDate = pd.Timestamp.now(tz="UTC").normalize()
+    #df = read_csv_data(ticker, startDate = startDate)
+    #print(df)
     #ohlc = get_ohlc_data(ticker, interval, since=startTimestamp)
     #ohlcDF = ohlc_to_df(ohlc)
     #print(ohlcDF)
