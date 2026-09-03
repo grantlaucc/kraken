@@ -195,6 +195,29 @@ def print_trade_plan(
     end_cash  = live_cash - net_notional
     print(f"\nCASH: {live_cash:,.2f} -> {end_cash:,.2f}  |  ${net_notional:,.2f}")
 
+def get_trade_plan_details(
+    plan: dict[str, float],
+    price_csv: str = "/Users/grantlau/Documents/QuantStuff/kraken/kraken_grant_stuff/research/all_opens.csv",
+) -> dict[str, dict]:
+    """
+    Per-base order prefill info derived from the trade plan: side, qty (abs, rounded 4dp),
+    and limit_price (per-unit price, not notional). Used to prefill the dashboard order form.
+    """
+    price_cols = [f"{a}/USD" for a in plan.keys() if a != "CASH"]
+    px_last = get_latest_closes(price_cols, price_csv)
+
+    details = {}
+    for a, d in plan.items():
+        if a == "CASH":
+            continue
+        price = float(px_last.get(f"{a}/USD", np.nan))
+        details[a] = {
+            "side": "BUY" if d > 0 else "SELL",
+            "qty": round(abs(d), 4),
+            "limit_price": None if np.isnan(price) else price,
+        }
+    return details
+
 def get_latest_closes(
     price_cols: list[str],
     price_csv: str,

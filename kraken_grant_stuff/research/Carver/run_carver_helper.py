@@ -122,7 +122,3 @@ def updateYesterdayNotional(live_positions_filepath: str, tickers: list[str], da
     df.to_csv(live_positions_filepath)
     return notional
 
-myTickers=['LTC/USD', 'LINK/USD', 'BCH/USD', 'ADA/USD', 'ETH/USD', 'XTZ/USD', 'ATOM/USD', 'XRP/USD', 'BTC/USD', 'DOGE/USD']
-updateYesterdayNotional("/Users/grantlau/Documents/QuantStuff/kraken/kraken_grant_stuff/research/Carver/strategies/EWMAC_8_32_LO_TEST_V5/live_positions.csv",
-                        myTickers,
-                        date_override = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=2))

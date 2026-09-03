@@ -6,15 +6,22 @@ from datetime import datetime, timezone
 import argparse
 import research.Carver.trading_system.forecast as forecast
 import research.Carver.trading_system.trading_system as trading_system
+import research.Carver.trading_system.coin_universe as coin_universe
 from file_helper import write_incremental_csv
 import run_carver_helper
 import research.ohlc_data as ohlc_data
 sys.path.append("/Users/grantlau/Documents/QuantStuff/CryptoFunding")
-import bitmex_funding_data
+sys.path.append("/Users/grantlau/Documents/QuantStuff/CryptoFunding/Hyperliquid")
+import hyperliquid_funding_data
 
 STRATEGY_NAME = "EWMAC_8_32_LO_TEST_V5"
 
-tickers = ['LTC/USD', 'LINK/USD', 'BCH/USD', 'ADA/USD', 'ETH/USD', 'XTZ/USD', 'ATOM/USD', 'XRP/USD', 'BTC/USD', 'DOGE/USD']
+# Same 10-coin live-trading universe as before, just re-sourced from coin_universe.csv
+# (research/Carver/trading_system/coin_universe.py) instead of hardcoded ticker strings --
+# refresh that CSV (python -m research.Carver.trading_system.coin_universe) to update
+# min sizes/inception/market cap; this list of bases is what actually gets traded.
+LIVE_TRADING_BASES = ['LTC', 'LINK', 'BCH', 'ADA', 'ETH', 'XTZ', 'ATOM', 'XRP', 'BTC', 'DOGE']
+tickers = coin_universe.to_kraken_tickers([c for c in coin_universe.load_universe() if c.base in LIVE_TRADING_BASES])
 quoteCurrency = "USD"
 
 end_ts = pd.Timestamp.now(tz="UTC").normalize()           # e.g., 2025-09-02 00:00:00+00:00
@@ -45,15 +52,17 @@ def run_carver(skip_update: bool, notional_file: str | None = None, run_early: b
             ohlc_data.download_run_early_data(interval=interval, tickers=usdc_pairs, startTimestamp=startTimestamp, column='close')
         else:
             ohlc_data.download_ohlc_data(interval=interval, tickers=usdc_pairs,startTimestamp=startTimestamp, new_only=True, column='open')
-        #Download Bitmex funding data
-        bitmex_tickers = [bitmex_funding_data.convert_symbol(t) for t in usdc_pairs]
-        bitmex_funding_data.download_funding_data(tickers=bitmex_tickers)
+        #Download Hyperliquid funding data (BitMEX history is kept as a static
+        #hourly-converted archive in bitmex_funding.csv; no longer pulled live)
+        hyperliquid_tickers = [t.split("/")[0] for t in usdc_pairs]
+        hyperliquid_funding_data.download_funding_data(tickers=hyperliquid_tickers)
 
     #TODO get trading capital based on today's prices and yesterday's real positions
     live_positions_filepath = os.path.join(strategy_folder, "live_positions.csv")
+    ##dateOverride = pd.Timestamp.utcnow().normalize() - pd.Timedelta(days=1)
     todayNotional = run_carver_helper.updateYesterdayNotional(live_positions_filepath, tickers)
-    print("TODAY NOTIONAL", todayNotional)
-
+    ##print("TODAY NOTIONAL", todayNotional)
+    ##return
     ###Run 
     subsystem_portfolio_df = trading_system.run_trading_system(tickers, forecasts, forecast_weights, trading_capital, 
                                                                volatility_target, instrument_weights, 

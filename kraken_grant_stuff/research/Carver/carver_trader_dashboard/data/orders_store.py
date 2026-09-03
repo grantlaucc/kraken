@@ -93,6 +93,22 @@ def update_status_by_order_id(strategy_dir: str, order_id: str, new_status: str)
         df.loc[idxes[-1], "status"] = new_status
         df.to_csv(path, index=False)
 
+def get_asset_by_order_id(strategy_dir: str, order_id: str) -> str | None:
+    """Look up the asset/coin recorded for an order_id -- Hyperliquid cancels need the coin
+    (to derive its asset index) alongside the order id, unlike Kraken's order_id-only cancel."""
+    path = orders_log_path(strategy_dir)
+    if not os.path.exists(path):
+        return None
+    with _ORDERS_LOCK:
+        df = pd.read_csv(path)
+        if "order_id" not in df.columns or "asset" not in df.columns:
+            return None
+        rows = df[df["order_id"].astype(str) == str(order_id)]
+        if rows.empty:
+            return None
+        return str(rows.iloc[-1]["asset"])
+
+
 def update_last_order_status(strategy_dir: str, symbol: str, new_status: str) -> None:
     path = orders_log_path(strategy_dir)
     if not os.path.exists(path): return

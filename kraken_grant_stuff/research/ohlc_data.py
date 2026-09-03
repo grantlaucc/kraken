@@ -247,7 +247,10 @@ def download_ohlc_data(interval, tickers, startTimestamp, new_only=True, column 
     for ticker in tickers:
         ohlc = get_ohlc_data(ticker, interval, since=startTimestamp)
         ohlcDF = ohlc_to_df(ohlc)
-        insert_ohlc_to_questdb_ilp(ticker, ohlcDF, interval, new_only=new_only)
+        try:
+            insert_ohlc_to_questdb_ilp(ticker, ohlcDF, interval, new_only=new_only)
+        except Exception as e:
+            print(f"!! QuestDB insert failed for {ticker}, continuing with CSV write: {e}")
         insert_ohlc_to_csv(ticker, ohlcDF, column = column, csvFile = "/Users/grantlau/Documents/QuantStuff/kraken/kraken_grant_stuff/research/all_opens.csv")
 
 def download_run_early_data(interval, tickers, startTimestamp, column = 'close'):
@@ -482,7 +485,7 @@ if __name__ == "__main__":
     #print(load_ohlc_data_to_df("BTC/USD"))
     #export_closes_to_csv_2(tickers=usdc_pairs)
     STRATEGY_DIR = os.path.join("Carver/strategies", "EWMAC_8_32_LO_TEST_V5")
-    delete_run_early_data(pd.Timestamp("2026-01-05 00:00:00+00:00"), STRATEGY_DIR)
+    delete_run_early_data(pd.Timestamp("2026-01-16 00:00:00+00:00"), STRATEGY_DIR)
     #ticker = ["BTC/USD", "ETH/USD"]
     #startDate = pd.Timestamp.now(tz="UTC").normalize()
     #df = read_csv_data(ticker, startDate = startDate)

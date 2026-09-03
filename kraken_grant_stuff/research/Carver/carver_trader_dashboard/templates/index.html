@@ -23,7 +23,38 @@
 </head>
 <body>
   <h1>Trader Dashboard</h1>
-  <small>Strategy: <b>{{ strategy_name }}</b> &nbsp;•&nbsp; Dir: <code>{{ strategy_dir }}</code></small>
+  <small>Strategy: <b>{{ strategy_name }}</b> &nbsp;•&nbsp; Venue: <b>{{ venue }}</b> &nbsp;•&nbsp; Dir: <code>{{ strategy_dir }}</code></small>
+
+  <div class="card" style="margin-top:16px">
+    <h3 style="margin-top:0">Positions &amp; Account</h3>
+    {% if venue == 'hyperliquid' %}
+      <p>
+        Account Value: <b>{{ "%.2f"|format(account_value) if account_value is not none else "—" }}</b>
+        &nbsp;•&nbsp; Withdrawable: {{ "%.2f"|format(withdrawable) if withdrawable is not none else "—" }}
+      </p>
+      {% if positions %}
+        <table>
+          <thead>
+            <tr><th>Coin</th><th class="right">Size</th><th class="right">Entry Px</th><th class="right">Unrealized PnL</th></tr>
+          </thead>
+          <tbody>
+            {% for coin, p in positions.items() %}
+              <tr>
+                <td>{{ coin }}</td>
+                <td class="right">{{ "%.6g"|format(p.szi) }}</td>
+                <td class="right">{{ "%.4f"|format(p.entry_px) if p.entry_px is not none else "—" }}</td>
+                <td class="right {{ 'ok' if p.unrealized_pnl >= 0 else 'err' }}">{{ "%.2f"|format(p.unrealized_pnl) }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="muted">No open positions.</p>
+      {% endif %}
+    {% else %}
+      <p class="muted">Kraken balances aren't tracked in this web view yet — use the <code>bal</code> command in the terminal running carver_trader.py.</p>
+    {% endif %}
+  </div>
 
   <div class="card">
     <h3 style="margin-top:0">Submit Order</h3>
@@ -31,14 +62,14 @@
       <div class="row">
         {% if bases %}
           <label>Base
-            <select name="base">
+            <select name="base" id="base-select">
               {% for b in bases %}
                 <option value="{{ b }}">{{ b }}</option>
               {% endfor %}
             </select>
           </label>
         {% else %}
-          <label>Base <input name="base" placeholder="e.g., BTC" required></label>
+          <label>Base <input name="base" id="base-select" placeholder="e.g., BTC" required></label>
         {% endif %}
 
         <label>Quote
@@ -50,28 +81,28 @@
         </label>
 
         <label>Side
-          <select name="side">
+          <select name="side" id="side-select">
             <option value="BUY">BUY</option>
             <option value="SELL">SELL</option>
           </select>
         </label>
 
         <label>Type
-          <select name="order_type">
-            <option value="market">market</option>
+          <select name="order_type" id="order-type-select">
             <option value="limit">limit</option>
+            <option value="market">market</option>
           </select>
         </label>
 
         <label>Limit Px
-          <input name="limit_price" type="number" step="any" placeholder="only for limit">
+          <input name="limit_price" id="limit-price-input" type="number" step="any" placeholder="only for limit">
         </label>
 
         <label title="If checked, Kraken will only validate the order without executing it.">
           <input type="checkbox" name="validate" value="true" checked> Validate
         </label>
 
-        <label>Quantity <input name="qty" type="number" step="any" min="0" placeholder="e.g., 0.05" required></label>
+        <label>Quantity <input name="qty" id="qty-input" type="number" step="any" min="0" placeholder="e.g., 0.05" required></label>
         <button type="submit">Submit</button>
       </div>
       {% if not ws_ready %}
@@ -85,6 +116,47 @@
     {% endwith %}
     <p class="muted">Orders are also logged to <code>orders_submitted.csv</code> in your strategy folder.</p>
   </div>
+
+  <script id="trade-plan-data" type="application/json">{{ trade_plan | tojson }}</script>
+  <script>
+    (function () {
+      var tradePlan = JSON.parse(document.getElementById('trade-plan-data').textContent || '{}');
+      var baseEl = document.getElementById('base-select');
+      var sideEl = document.getElementById('side-select');
+      var typeEl = document.getElementById('order-type-select');
+      var limitEl = document.getElementById('limit-price-input');
+      var qtyEl = document.getElementById('qty-input');
+
+      function applyPlan(base) {
+        var p = tradePlan[base];
+        if (!p) return;
+        sideEl.value = p.side;
+        typeEl.value = 'limit';
+        if (p.limit_price !== null && p.limit_price !== undefined) limitEl.value = p.limit_price;
+        if (p.qty !== null && p.qty !== undefined) qtyEl.value = p.qty;
+      }
+
+      if (baseEl) {
+        baseEl.addEventListener('change', function (e) { applyPlan(e.target.value); });
+        applyPlan(baseEl.value); // prefill for the initially selected base, if already available
+
+        // The trade plan embedded above may be empty if the page loaded before the
+        // balances snapshot arrived over the WS. Poll briefly for fresh data and
+        // apply it — but only while the fields are still untouched, so we never
+        // clobber something the user has started typing.
+        var pollsLeft = 15; // ~30s at 2s intervals
+        var pollTimer = setInterval(function () {
+          pollsLeft -= 1;
+          if (pollsLeft <= 0) { clearInterval(pollTimer); return; }
+          fetch('/trade_plan.json').then(function (r) { return r.json(); }).then(function (fresh) {
+            tradePlan = fresh;
+            var fieldsUntouched = !limitEl.value && !qtyEl.value;
+            if (fieldsUntouched) applyPlan(baseEl.value);
+          }).catch(function () {});
+        }, 2000);
+      }
+    })();
+  </script>
 
   <div class="card" style="margin-top:16px">
     <h3 style="margin-top:0">Recent Orders</h3>
@@ -135,6 +207,51 @@
       <p class="muted">No orders yet.</p>
     {% endif %}
   </div>
+
+  {% if venue == 'hyperliquid' %}
+  <div class="card" style="margin-top:16px">
+    <h3 style="margin-top:0">Trade History</h3>
+    <p>
+      Realized PnL: <b class="{{ 'ok' if pnl.realized_pnl >= 0 else 'err' }}">{{ "%.2f"|format(pnl.realized_pnl) }}</b>
+      &nbsp;•&nbsp; Total Funding: <b class="{{ 'ok' if pnl.total_funding >= 0 else 'err' }}">{{ "%.2f"|format(pnl.total_funding) }}</b>
+    </p>
+
+    <h4>Recent Fills</h4>
+    {% if fills %}
+      <table>
+        <thead><tr><th>Time</th><th>Coin</th><th>Side</th><th class="right">Px</th><th class="right">Sz</th><th class="right">Closed PnL</th><th class="right">Fee</th></tr></thead>
+        <tbody>
+          {% for f in fills %}
+            <tr>
+              <td>{{ f.time }}</td><td>{{ f.coin }}</td><td>{{ f.side }}</td>
+              <td class="right">{{ f.px }}</td><td class="right">{{ f.sz }}</td>
+              <td class="right">{{ f.closedPnl }}</td><td class="right">{{ f.fee }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">No fills yet.</p>
+    {% endif %}
+
+    <h4>Recent Funding Payments</h4>
+    {% if funding %}
+      <table>
+        <thead><tr><th>Time</th><th>Coin</th><th class="right">USDC</th><th class="right">Size</th><th class="right">Rate</th></tr></thead>
+        <tbody>
+          {% for fnd in funding %}
+            <tr>
+              <td>{{ fnd.time }}</td><td>{{ fnd.coin }}</td>
+              <td class="right">{{ fnd.usdc }}</td><td class="right">{{ fnd.szi }}</td><td class="right">{{ fnd.fundingRate }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">No funding payments recorded yet.</p>
+    {% endif %}
+    <p class="muted">Also written incrementally to <code>hl_fills.csv</code> / <code>hl_funding_payments.csv</code> in your strategy folder.</p>
+  </div>
+  {% endif %}
 </body>
 </html>
-"""

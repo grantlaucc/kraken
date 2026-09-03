@@ -1,4 +1,5 @@
 #%%
+import sys
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -9,10 +10,15 @@ import research.Carver.trading_system.subsystem_portfolio as subsystem_portfolio
 import research.ohlc_data as ohlc_data
 from datetime import datetime, timezone, timedelta
 from research.Carver.file_helper import write_incremental_csv
+sys.path.append("/Users/grantlau/Documents/QuantStuff/CryptoFunding/Hyperliquid")
+import hyperliquid_price_data
 
 
 
-def run_trading_system(tickers, forecasts, forecast_weights, trading_capital, volatility_target, instrument_weights, correlation_file=None, save_dir=False):
+def run_trading_system(tickers, forecasts, forecast_weights, trading_capital, volatility_target, instrument_weights, correlation_file=None, save_dir=False, price_source="kraken"):
+    """price_source: "kraken" (spot) or "hyperliquid" (perp) -- drives the vol-targeting and
+    correlation calcs below, independent of each forecast's own price_source. Keep them in
+    sync when backtesting a real venue; see backtest_carver.py's run_backtest for the check."""
     #Combined Forecast
     combined_forecasts_df = combined_forecast.get_combined_forecasts(tickers, forecasts, forecast_weights)
     print("combined_forecasts_df complete")
@@ -21,16 +27,16 @@ def run_trading_system(tickers, forecasts, forecast_weights, trading_capital, vo
     #Volatility Targeting
 
     #Position Sizing
-    position_sizing_df = position_sizing.get_position_sizing(tickers, combined_forecasts_df, trading_capital, volatility_target)
+    position_sizing_df = position_sizing.get_position_sizing(tickers, combined_forecasts_df, trading_capital, volatility_target, price_source=price_source)
     print("position_sizing_df complete")
     print(position_sizing_df.tail())
 
     #Subsystem Portfolio
-    subsystem_portfolio_df = subsystem_portfolio.get_subsystem_portfolio(tickers, instrument_weights, position_sizing_df, 
-                                                                        correlation_file = correlation_file)
+    subsystem_portfolio_df = subsystem_portfolio.get_subsystem_portfolio(tickers, instrument_weights, position_sizing_df,
+                                                                        correlation_file = correlation_file, price_source=price_source)
     print("subsytem_portfolio_df complete")
     print(subsystem_portfolio_df.tail())
-    
+
 
     final_display_df = pd.DataFrame({
         "Combined Forecast": combined_forecasts_df.iloc[-1],
@@ -40,7 +46,10 @@ def run_trading_system(tickers, forecasts, forecast_weights, trading_capital, vo
     last_close_dict = {}
 
     for ticker in tickers:
-        last_close_series = ohlc_data.load_ohlc_data_to_df(ticker, startDate=combined_forecasts_df.index[-1], selectCols=["open"]).squeeze("columns")
+        if price_source == "kraken":
+            last_close_series = ohlc_data.load_ohlc_data_to_df(ticker, startDate=combined_forecasts_df.index[-1], selectCols=["open"]).squeeze("columns")
+        else:
+            last_close_series = hyperliquid_price_data.load_hyperliquid_price_to_df(ticker, startDate=combined_forecasts_df.index[-1], selectCols=["open"]).squeeze("columns")
         if not last_close_series.empty:
             last_close_dict[ticker] = last_close_series.iloc[0]
 
